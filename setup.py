@@ -20,7 +20,7 @@ classifiers = [
 
 setup(
     name='pydantic-to-typescript',
-    version='1.0.1',
+    version='1.0.2',
     description='Convert pydantic models to typescript interfaces',
     license='MIT',
     long_description=readme(),

@@ -4,7 +4,8 @@ import importlib
 import os
 import shutil
 from pydantic import BaseModel, create_model
-from typing import Type, Dict, Any
+from tempfile import mkdtemp
+from typing import Type, Dict, Any, List
 from types import ModuleType
 
 
@@ -18,18 +19,34 @@ def remove_property_titles(schema: Dict[str, Any], model: Type[BaseModel]) -> No
         prop.pop('title', None)
 
 
-def extract_pydantic_models(module: ModuleType):
+def not_private(obj) -> bool:
+    """Return true if an object does not seem to be private"""
+    return not getattr(obj, '__name__', '').startswith('_')
+
+
+def is_submodule(obj, module_name: str) -> bool:
+    """Return true if an object is a submodule"""
+    return not_private(obj) and inspect.ismodule(obj) and getattr(obj, '__name__', '').startswith(f'{module_name}.')
+
+
+def is_pydantic_model(obj) -> bool:
+    """Return true if an object is a subclass of pydantic's BaseModel"""
+    return not_private(obj) and inspect.isclass(obj) and issubclass(obj, BaseModel) and obj != BaseModel
+
+
+def extract_pydantic_models(module: ModuleType) -> List[Type[BaseModel]]:
     """
     Given a module, return a list of the pydantic models contained within it.
     """
     models = []
-    for name in dir(module):
-        obj = getattr(module, name)
-        if (not name.startswith('_'))\
-                and inspect.isclass(obj)\
-                and issubclass(obj, BaseModel)\
-                and obj != BaseModel:
-            models.append(obj)
+    module_name = module.__name__
+
+    for _, model in inspect.getmembers(module, is_pydantic_model):
+        models.append(model)
+
+    for _, submodule in inspect.getmembers(module, lambda obj: is_submodule(obj, module_name)):
+        models.extend(extract_pydantic_models(submodule))
+
     return models
 
 
@@ -83,7 +100,10 @@ def main(
     master_model = create_model('_Master_', **{m.__name__: (m, ...) for m in models})
     master_model.Config.schema_extra = staticmethod(remove_property_titles)
 
-    with open('schema.json', 'w') as f:
+    schema_dir = mkdtemp()
+    schema_file_path = os.path.join(schema_dir, 'schema.json')
+
+    with open(schema_file_path, 'w') as f:
         f.write(master_model.schema_json(indent=2))
 
     banner_comment = '\n'.join([
@@ -94,8 +114,8 @@ def main(
         '*/',
     ])
 
-    os.system(f'{json2ts_cmd} -i schema.json -o {output} --bannerComment "{banner_comment}"')
-    os.remove('schema.json')
+    os.system(f'{json2ts_cmd} -i {schema_file_path} -o {output} --bannerComment "{banner_comment}"')
+    shutil.rmtree(schema_dir)
     remove_master_model_from_output(output)
 
 
