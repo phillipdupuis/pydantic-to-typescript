@@ -7,10 +7,15 @@
 export interface Athlete {
   name: string;
   age: number;
-  sports: ("football" | "basketball" | "running" | "swimming")[];
+  sports: ("football" | "basketball")[];
+}
+export interface League {
+  cities: {
+    [k: string]: Team;
+  };
 }
 export interface Team {
   name: string;
-  sport: "football" | "basketball" | "running" | "swimming";
+  sport: "football" | "basketball";
   athletes: Athlete[];
 }

@@ -1,28 +1,31 @@
 from pydantic import BaseModel, Extra
 from enum import Enum
-from typing import List
+from typing import List, Dict
 
 
-class NoUnspecifiedProps:
+class NoExtraProps:
     extra = Extra.forbid
 
 
 class Sport(str, Enum):
     football = 'football'
     basketball = 'basketball'
-    running = 'running'
-    swimming = 'swimming'
 
 
 class Athlete(BaseModel):
     name: str
     age: int
     sports: List[Sport]
-    Config = NoUnspecifiedProps
+    Config = NoExtraProps
 
 
 class Team(BaseModel):
     name: str
     sport: Sport
     athletes: List[Athlete]
-    Config = NoUnspecifiedProps
+    Config = NoExtraProps
+
+
+class League(BaseModel):
+    cities: Dict[str, Team]
+    Config = NoExtraProps
