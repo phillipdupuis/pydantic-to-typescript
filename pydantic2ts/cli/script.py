@@ -3,20 +3,27 @@ import inspect
 import importlib
 import os
 import shutil
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, Extra, create_model
 from tempfile import mkdtemp
 from typing import Type, Dict, Any, List
 from types import ModuleType
 
 
-def remove_property_titles(schema: Dict[str, Any], model: Type[BaseModel]) -> None:
+def clean_schema(schema: Dict[str, Any], model: Type[BaseModel]) -> None:
     """
-    Monkey-patched method for removing titles from JSON schema properties.
-    If we don't do this, each property will have its own interface in the
-    resulting typescript file (which is a LOT of unnecessary noise).
+    Monkey-patched method for cleaning up resulting JSON schemas by:
+
+    1) Removing titles from JSON schema properties.
+       If we don't do this, each property will have its own interface in the
+       resulting typescript file (which is a LOT of unnecessary noise).
+    2) Setting 'additionalProperties' to False UNLESS Config.extra is explicitly
+       set to "allow". This keeps the typescript interfaces clean (ie useful).
     """
     for prop in schema.get('properties', {}).values():
         prop.pop('title', None)
+
+    if model.Config.extra != Extra.allow:
+        schema['additionalProperties'] = False
 
 
 def not_private(obj) -> bool:
@@ -95,10 +102,10 @@ def main(
     models = extract_pydantic_models(importlib.import_module(module))
 
     for m in models:
-        m.Config.schema_extra = staticmethod(remove_property_titles)
+        m.Config.schema_extra = staticmethod(clean_schema)
 
     master_model = create_model('_Master_', **{m.__name__: (m, ...) for m in models})
-    master_model.Config.schema_extra = staticmethod(remove_property_titles)
+    master_model.Config.schema_extra = staticmethod(clean_schema)
 
     schema_dir = mkdtemp()
     schema_file_path = os.path.join(schema_dir, 'schema.json')

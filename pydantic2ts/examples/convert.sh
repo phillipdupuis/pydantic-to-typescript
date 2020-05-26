@@ -1,3 +1,2 @@
 #!/bin/bash
-
-pydantic2ts --module pydantic2ts.examples.pydantic_models --output output.ts
+pydantic2ts --module pydantic2ts.examples.api --output apiTypes.ts

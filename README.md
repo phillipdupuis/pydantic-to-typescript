@@ -18,65 +18,77 @@ $ pip install pydantic-to-typescript
 |&#8209;&#8209;json2ts&#8209;cmd|optional, the command used to invoke json2ts. The default is 'json2ts'. Specify this if you have it installed in a strange location and need to provide the exact path (ex: /myproject/node_modules/bin/json2ts)|
 ---
 ### Usage
-pydantic2ts/examples/pydantic_models.py:
+Define your pydantic models (ex: /backend/api.py):
 ```python
-from pydantic import BaseModel, Extra
-from enum import Enum
-from typing import List, Dict
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import List, Optional
 
+api = FastAPI()
 
-class NoExtraProps:
-    extra = Extra.forbid
+class LoginCredentials(BaseModel):
+    username: str
+    password: str
 
+class Profile(BaseModel):
+    username: str
+    age: Optional[int]
+    hobbies: List[str]
 
-class Sport(str, Enum):
-    football = 'football'
-    basketball = 'basketball'
+class LoginResponseData(BaseModel):
+    token: str
+    profile: Profile
 
-
-class Athlete(BaseModel):
-    name: str
-    age: int
-    sports: List[Sport]
-    Config = NoExtraProps
-
-
-class Team(BaseModel):
-    name: str
-    sport: Sport
-    athletes: List[Athlete]
-    Config = NoExtraProps
-
-
-class League(BaseModel):
-    cities: Dict[str, Team]
-    Config = NoExtraProps
+@api.post('/login/', response_model=LoginResponseData)
+def login(body: LoginCredentials):
+    profile = Profile(**body.dict(), age=72, hobbies=['cats'])
+    return LoginResponseData(token='very-secure', profile=profile)
 ```
-Command-line:
+Execute the command for converting these models into typescript definitions:
 ```bash
-$ pydantic2ts --module pydantic2ts.examples.pydantic_models --output output.ts
+$ pydantic2ts --module backend.api --output ./frontend/apiTypes.ts
 ```
-output.ts:
-```
+The models are now defined in typescript...
+```ts
 /* tslint:disable */
 /**
 /* This file was automatically generated from pydantic models by running pydantic2ts.
 /* Do not modify it by hand - just update the pydantic models and then re-run the script
 */
 
-export interface Athlete {
-  name: string;
-  age: number;
-  sports: ("football" | "basketball")[];
+export interface LoginCredentials {
+  username: string;
+  password: string;
 }
-export interface League {
-  cities: {
-    [k: string]: Team;
-  };
+export interface LoginResponseData {
+  token: string;
+  profile: Profile;
 }
-export interface Team {
-  name: string;
-  sport: "football" | "basketball";
-  athletes: Athlete[];
+export interface Profile {
+  username: string;
+  age?: number;
+  hobbies: string[];
+}
+```
+...and can be used in your typescript code with complete confidence.
+```ts
+import { LoginCredentials, LoginResponseData } from './apiTypes.ts';
+
+async function login(
+  credentials: LoginCredentials,
+  resolve: (data: LoginResponseData) => void,
+  reject: (error: string) => void,
+) {
+  try {
+    const response: Response = await fetch('/login/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(credentials),
+    });
+    const data: LoginResponseData = await response.json();
+    resolve(data);
+  } catch (error) {
+    reject(error.message);
+  }
 }
 ```
