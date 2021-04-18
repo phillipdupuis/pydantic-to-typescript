@@ -221,6 +221,8 @@ def main(module: str, output: str, json2ts_cmd: str = "json2ts") -> None:
     """
     CLI entrypoint to run :func:`generate_typescript_defs`
     """
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
+
     return generate_typescript_defs(module, output, json2ts_cmd)
 
 
