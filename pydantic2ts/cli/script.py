@@ -19,8 +19,6 @@ try:
 except ImportError:
     GenericModel = None
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
-
 logger = logging.getLogger("pydantic2ts")
 
 
