@@ -16,7 +16,9 @@ def get_expected_output(test_name: str) -> str:
         return f.read()
 
 
-def run_test(tmpdir, test_name, *, module_path=None, call_from_python=False):
+def run_test(
+    tmpdir, test_name, *, module_path=None, call_from_python=False, exclude=()
+):
     """
     Execute pydantic2ts logic for converting pydantic models into tyepscript definitions.
     Compare the output with the expected output, verifying it is identical.
@@ -25,9 +27,12 @@ def run_test(tmpdir, test_name, *, module_path=None, call_from_python=False):
     output_path = tmpdir.join(f"cli_{test_name}.ts").strpath
 
     if call_from_python:
-        generate_typescript_defs(module_path, output_path)
+        generate_typescript_defs(module_path, output_path, exclude)
     else:
-        os.system(f"pydantic2ts --module {module_path} --output {output_path}")
+        cmd = f"pydantic2ts --module {module_path} --output {output_path}"
+        for model_to_exclude in exclude:
+            cmd += f" --exclude {model_to_exclude}"
+        os.system(cmd)
 
     with open(output_path, "r") as f:
         output = f.read()
@@ -46,6 +51,12 @@ def test_generics(tmpdir):
     run_test(tmpdir, "generics")
 
 
+def test_excluding_models(tmpdir):
+    run_test(
+        tmpdir, "excluding_models", exclude=("LoginCredentials", "LoginResponseData")
+    )
+
+
 def test_relative_filepath(tmpdir):
     test_name = "single_module"
     relative_path = os.path.join(".", "expected_results", test_name, "input.py")
@@ -58,3 +69,9 @@ def test_calling_from_python(tmpdir):
     run_test(tmpdir, "single_module", call_from_python=True)
     run_test(tmpdir, "submodules", call_from_python=True)
     run_test(tmpdir, "generics", call_from_python=True)
+    run_test(
+        tmpdir,
+        "excluding_models",
+        call_from_python=True,
+        exclude=("LoginCredentials", "LoginResponseData"),
+    )

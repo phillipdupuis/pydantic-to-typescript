@@ -8,7 +8,7 @@ import sys
 from importlib.util import spec_from_file_location, module_from_spec
 from tempfile import mkdtemp
 from types import ModuleType
-from typing import Type, Dict, Any, List
+from typing import Type, Dict, Any, List, Tuple
 from uuid import uuid4
 
 import click
@@ -141,14 +141,16 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
     '[k: string]: any' from being added to every interface. This change is reverted
     once the schema has been generated.
     """
-    model_extras = [getattr(m.Config, 'extra', None) for m in models]
+    model_extras = [getattr(m.Config, "extra", None) for m in models]
 
     try:
         for m in models:
-            if getattr(m.Config, 'extra', None) != Extra.allow:
+            if getattr(m.Config, "extra", None) != Extra.allow:
                 m.Config.extra = Extra.forbid
 
-        master_model = create_model("_Master_", **{m.__name__: (m, ...) for m in models})
+        master_model = create_model(
+            "_Master_", **{m.__name__: (m, ...) for m in models}
+        )
         master_model.Config.extra = Extra.forbid
         master_model.Config.schema_extra = staticmethod(clean_schema)
 
@@ -166,13 +168,14 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
 
 
 def generate_typescript_defs(
-    module: str, output: str, json2ts_cmd: str = "json2ts"
+    module: str, output: str, exclude: Tuple[str] = (), json2ts_cmd: str = "json2ts"
 ) -> None:
     """
     Convert the pydantic models in a python module into typescript interfaces.
 
     :param module: python module containing pydantic model definitions, ex: my_project.api.schemas
     :param output: file that the typescript definitions will be written to
+    :param exclude: optional, a tuple of names for pydantic models which should be omitted from the typescript output.
     :param json2ts_cmd: optional, the command that will execute json2ts. Use this if it's installed in a strange spot.
     """
     if not shutil.which(json2ts_cmd):
@@ -184,6 +187,9 @@ def generate_typescript_defs(
     logger.info("Finding pydantic models...")
 
     models = extract_pydantic_models(import_module(module))
+
+    if exclude:
+        models = [m for m in models if m.__name__ not in exclude]
 
     logger.info("Generating JSON schema from pydantic models...")
 
@@ -216,14 +222,26 @@ def generate_typescript_defs(
 
 
 @click.command()
-@click.option("--module")
-@click.option("--output")
+@click.option(
+    "--module",
+    help="name or filepath of the python module. Discoverable submodules will also be checked",
+)
+@click.option(
+    "--output", help="name of the file the typescript definitions should be written to"
+)
+@click.option(
+    "--exclude",
+    multiple=True,
+    help="name of a pydantic model which should be omitted from the results. This option can be defined multiple times",
+)
 @click.option("--json2ts-cmd", default="json2ts")
-def main(module: str, output: str, json2ts_cmd: str = "json2ts") -> None:
+def main(
+    module: str, output: str, exclude: Tuple[str], json2ts_cmd: str = "json2ts"
+) -> None:
     """
     CLI entrypoint to run :func:`generate_typescript_defs`
     """
-    return generate_typescript_defs(module, output, json2ts_cmd)
+    return generate_typescript_defs(module, output, exclude, json2ts_cmd)
 
 
 if __name__ == "__main__":
