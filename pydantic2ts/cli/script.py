@@ -19,8 +19,6 @@ try:
 except ImportError:
     GenericModel = None
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
-
 logger = logging.getLogger("pydantic2ts")
 
 
@@ -241,6 +239,7 @@ def main(
     """
     CLI entrypoint to run :func:`generate_typescript_defs`
     """
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
     return generate_typescript_defs(module, output, exclude, json2ts_cmd)
 
 
