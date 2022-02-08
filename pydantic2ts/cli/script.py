@@ -210,13 +210,17 @@ def generate_typescript_defs(
             "*/",
         ]
     )
-    os.system(
+    status = os.system(
         f'{json2ts_cmd} -i {schema_file_path} -o {output} --bannerComment "{banner_comment}"'
     )
-    shutil.rmtree(schema_dir)
-    remove_master_model_from_output(output)
 
-    logger.info(f"Saved typescript definitions to {output}.")
+    if status == 0:
+        remove_master_model_from_output(output)
+        logger.info(f"Saved typescript definitions to {output}.")
+    else:
+        logger.error(f"{json2ts_cmd} failed with exit code {status}.")
+
+    shutil.rmtree(schema_dir)
 
 
 @click.command()
