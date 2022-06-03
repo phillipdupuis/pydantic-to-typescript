@@ -17,7 +17,8 @@ def get_expected_output(test_name: str) -> str:
 
 
 def run_test(
-    tmpdir, test_name, *, module_path=None, call_from_python=False, exclude=()
+    tmpdir, test_name, *, module_path=None, call_from_python=False,
+    exclude=(), by_alias: bool = False
 ):
     """
     Execute pydantic2ts logic for converting pydantic models into tyepscript definitions.
@@ -27,11 +28,13 @@ def run_test(
     output_path = tmpdir.join(f"cli_{test_name}.ts").strpath
 
     if call_from_python:
-        generate_typescript_defs(module_path, output_path, exclude)
+        generate_typescript_defs(module_path, output_path, exclude,
+                by_alias)
     else:
         cmd = f"pydantic2ts --module {module_path} --output {output_path}"
         for model_to_exclude in exclude:
             cmd += f" --exclude {model_to_exclude}"
+        cmd += f" --by-alias {by_alias}"
         os.system(cmd)
 
     with open(output_path, "r") as f:
@@ -42,6 +45,12 @@ def run_test(
 def test_single_module(tmpdir):
     run_test(tmpdir, "single_module")
 
+def test_single_module_alias_id(tmpdir):
+    run_test(tmpdir, "single_module_alias_id", 
+            call_from_python=True, by_alias=True)
+
+def test_single_module_alias_id_cmd(tmpdir):
+    run_test(tmpdir, "single_module_alias_id", by_alias=True)
 
 def test_submodules(tmpdir):
     run_test(tmpdir, "submodules")

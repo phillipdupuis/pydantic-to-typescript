@@ -128,7 +128,7 @@ def clean_schema(schema: Dict[str, Any]) -> None:
         del schema["description"]
 
 
-def generate_json_schema(models: List[Type[BaseModel]]) -> str:
+def generate_json_schema(models: List[Type[BaseModel]], by_alias: bool) -> str:
     """
     Create a top-level '_Master_' model with references to each of the actual models.
     Generate the schema for this model, which will include the schemas for all the
@@ -152,7 +152,7 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
         master_model.Config.extra = Extra.forbid
         master_model.Config.schema_extra = staticmethod(clean_schema)
 
-        schema = json.loads(master_model.schema_json())
+        schema = json.loads(master_model.schema_json(by_alias=by_alias))
 
         for d in schema.get("definitions", {}).values():
             clean_schema(d)
@@ -166,7 +166,8 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
 
 
 def generate_typescript_defs(
-    module: str, output: str, exclude: Tuple[str] = (), json2ts_cmd: str = "json2ts"
+    module: str, output: str, exclude: Tuple[str] = (), json2ts_cmd: str
+    = "json2ts", by_alias: bool = False
 ) -> None:
     """
     Convert the pydantic models in a python module into typescript interfaces.
@@ -191,7 +192,7 @@ def generate_typescript_defs(
 
     logger.info("Generating JSON schema from pydantic models...")
 
-    schema = generate_json_schema(models)
+    schema = generate_json_schema(models, by_alias)
     schema_dir = mkdtemp()
     schema_file_path = os.path.join(schema_dir, "schema.json")
 
@@ -228,19 +229,26 @@ def generate_typescript_defs(
     "--output", help="name of the file the typescript definitions should be written to"
 )
 @click.option(
+    "--by-alias", 
+    help="Use the backing field name (True) or the model field name (False)",
+    default=False
+)
+@click.option(
     "--exclude",
     multiple=True,
     help="name of a pydantic model which should be omitted from the results. This option can be defined multiple times",
 )
 @click.option("--json2ts-cmd", default="json2ts")
 def main(
-    module: str, output: str, exclude: Tuple[str], json2ts_cmd: str = "json2ts"
+    module: str, output: str, exclude: Tuple[str], json2ts_cmd: str =
+    "json2ts", by_alias: bool = False
 ) -> None:
     """
     CLI entrypoint to run :func:`generate_typescript_defs`
     """
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
-    return generate_typescript_defs(module, output, exclude, json2ts_cmd)
+    return generate_typescript_defs(module, output, exclude,
+            json2ts_cmd, by_alias)
 
 
 if __name__ == "__main__":
