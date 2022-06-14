@@ -1,4 +1,5 @@
 import os
+import sys
 from pydantic2ts import generate_typescript_defs
 
 
@@ -23,6 +24,9 @@ def run_test(
     Execute pydantic2ts logic for converting pydantic models into tyepscript definitions.
     Compare the output with the expected output, verifying it is identical.
     """
+    # Literal was only introduced in python 3.8 (Ref.: PEP 586) so tests break
+    if sys.version_info < (3, 8) and test_name == "submodules":
+        return
     module_path = module_path or get_input_module(test_name)
     output_path = tmpdir.join(f"cli_{test_name}.ts").strpath
 
