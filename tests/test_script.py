@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 from pydantic2ts import generate_typescript_defs
 
 
@@ -36,7 +37,7 @@ def run_test(
         cmd = f"pydantic2ts --module {module_path} --output {output_path}"
         for model_to_exclude in exclude:
             cmd += f" --exclude {model_to_exclude}"
-        os.system(cmd)
+        subprocess.run(cmd, shell=True)
 
     with open(output_path, "r") as f:
         output = f.read()
