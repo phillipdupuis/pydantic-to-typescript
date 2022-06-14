@@ -38,11 +38,11 @@ jobs:
           npm i -g json-schema-to-typescript
       - name: Install python dependencies
         run: |
-          python -m pip install -U pip wheel pytest
+          python -m pip install -U pip wheel pytest pytest-cov
           python -m pip install -U .
       - name: Run tests
         run: |
-          python -m pytest
+          python -m pytest --cov=pydantic2ts
 
   deploy:
     name: Deploy to PyPi
