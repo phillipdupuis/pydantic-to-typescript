@@ -68,7 +68,7 @@ def test_excluding_models(tmpdir):
 
 def test_relative_filepath(tmpdir):
     test_name = "single_module"
-    relative_path = os.path.join(".", "expected_results", test_name, "input.py")
+    relative_path = os.path.join(".", "tests", "expected_results", test_name, "input.py")
     run_test(
         tmpdir, "single_module", module_path=relative_path,
     )
