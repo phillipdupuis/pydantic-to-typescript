@@ -28,6 +28,10 @@ def run_test(
     # Literal was only introduced in python 3.8 (Ref.: PEP 586) so tests break
     if sys.version_info < (3, 8) and test_name == "submodules":
         return
+    # GenericModel is only supported for python>=3.7
+    # (Ref.: https://pydantic-docs.helpmanual.io/usage/models/#generic-models)
+    if sys.version_info < (3, 7) and test_name == "generics":
+        return
     module_path = module_path or get_input_module(test_name)
     output_path = tmpdir.join(f"cli_{test_name}.ts").strpath
 
