@@ -2,6 +2,7 @@
 
 [![PyPI version](https://badge.fury.io/py/pydantic-to-typescript.svg)](https://badge.fury.io/py/pydantic-to-typescript)
 [![Tests](https://github.com/phillipdupuis/pydantic-to-typescript/actions/workflows/tests.yml/badge.svg)](https://github.com/phillipdupuis/pydantic-to-typescript/actions/workflows/tests.yml)
+[![Coverage Status](https://coveralls.io/repos/github/phillipdupuis/pydantic-to-typescript/badge.svg?branch=master)](https://coveralls.io/github/phillipdupuis/pydantic-to-typescript?branch=master)
 
 A simple CLI tool for converting pydantic models into typescript interfaces. Useful for any scenario in which python and javascript applications are interacting, since it allows you to have a single source of truth for type definitions.
 

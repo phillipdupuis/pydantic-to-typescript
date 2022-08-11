@@ -116,6 +116,7 @@ def remove_master_model_from_output(output: str) -> None:
     ]
 
     new_lines = banner_comment_lines + lines[:start] + lines[(end + 1) :]
+
     with open(output, "w") as f:
         f.writelines(new_lines)
 
@@ -209,9 +210,7 @@ def generate_typescript_defs(
 
     logger.info("Converting JSON schema to typescript definitions...")
 
-    os.system(
-        f'{json2ts_cmd} -i {schema_file_path} -o {output} --bannerComment ""'
-    )
+    os.system(f'{json2ts_cmd} -i {schema_file_path} -o {output} --bannerComment ""')
     shutil.rmtree(schema_dir)
     remove_master_model_from_output(output)
 
