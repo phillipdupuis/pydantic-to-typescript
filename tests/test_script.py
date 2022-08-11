@@ -1,4 +1,6 @@
 import os
+import sys
+import subprocess
 from pydantic2ts import generate_typescript_defs
 
 
@@ -23,6 +25,13 @@ def run_test(
     Execute pydantic2ts logic for converting pydantic models into tyepscript definitions.
     Compare the output with the expected output, verifying it is identical.
     """
+    # Literal was only introduced in python 3.8 (Ref.: PEP 586) so tests break
+    if sys.version_info < (3, 8) and test_name == "submodules":
+        return
+    # GenericModel is only supported for python>=3.7
+    # (Ref.: https://pydantic-docs.helpmanual.io/usage/models/#generic-models)
+    if sys.version_info < (3, 7) and test_name == "generics":
+        return
     module_path = module_path or get_input_module(test_name)
     output_path = tmpdir.join(f"cli_{test_name}.ts").strpath
 
@@ -32,7 +41,7 @@ def run_test(
         cmd = f"pydantic2ts --module {module_path} --output {output_path}"
         for model_to_exclude in exclude:
             cmd += f" --exclude {model_to_exclude}"
-        os.system(cmd)
+        subprocess.run(cmd, shell=True)
 
     with open(output_path, "r") as f:
         output = f.read()
@@ -59,7 +68,7 @@ def test_excluding_models(tmpdir):
 
 def test_relative_filepath(tmpdir):
     test_name = "single_module"
-    relative_path = os.path.join(".", "expected_results", test_name, "input.py")
+    relative_path = os.path.join(".", "tests", "expected_results", test_name, "input.py")
     run_test(
         tmpdir, "single_module", module_path=relative_path,
     )
