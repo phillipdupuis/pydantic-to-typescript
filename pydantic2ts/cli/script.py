@@ -40,7 +40,7 @@ def import_module(path: str) -> ModuleType:
             return module
         else:
             return importlib.import_module(path)
-    except BaseException as e:
+    except Exception as e:
         logger.error(
             "The --module argument must be a module path separated by dots or a valid filepath"
         )

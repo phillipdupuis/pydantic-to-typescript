@@ -95,3 +95,22 @@ def test_calling_from_python(tmpdir):
         call_from_python=True,
         exclude=("LoginCredentials", "LoginResponseData"),
     )
+
+
+def test_error_if_json2ts_not_installed(tmpdir):
+    with pytest.raises(Exception) as exc:
+        module_path = get_input_module("single_module")
+        output_path = tmpdir.join(f"cli_single_module.ts").strpath
+        json2ts_cmd = "someCommandWhichDefinitelyDoesNotExist"
+        generate_typescript_defs(module_path, output_path, json2ts_cmd=json2ts_cmd)
+    assert (
+        str(exc.value)
+        == "json2ts must be installed. Instructions can be found here: https://www.npmjs.com/package/json-schema-to-typescript"
+    )
+
+
+def test_error_if_invalid_module_path(tmpdir):
+    with pytest.raises(ModuleNotFoundError):
+        generate_typescript_defs(
+            "fake_module", tmpdir.join(f"fake_module_output.ts").strpath
+        )
