@@ -1,6 +1,7 @@
 import os
 import sys
 import subprocess
+import pytest
 from pydantic2ts import generate_typescript_defs
 
 
@@ -25,13 +26,6 @@ def run_test(
     Execute pydantic2ts logic for converting pydantic models into tyepscript definitions.
     Compare the output with the expected output, verifying it is identical.
     """
-    # Literal was only introduced in python 3.8 (Ref.: PEP 586) so tests break
-    if sys.version_info < (3, 8) and test_name == "submodules":
-        return
-    # GenericModel is only supported for python>=3.7
-    # (Ref.: https://pydantic-docs.helpmanual.io/usage/models/#generic-models)
-    if sys.version_info < (3, 7) and test_name == "generics":
-        return
     module_path = module_path or get_input_module(test_name)
     output_path = tmpdir.join(f"cli_{test_name}.ts").strpath
 
@@ -52,10 +46,21 @@ def test_single_module(tmpdir):
     run_test(tmpdir, "single_module")
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 8),
+    reason="Literal requires python 3.8 or higher (Ref.: PEP 586)",
+)
 def test_submodules(tmpdir):
     run_test(tmpdir, "submodules")
 
 
+@pytest.mark.skipif(
+    sys.version_info < (3, 7),
+    reason=(
+        "GenericModel is only supported for python>=3.7 "
+        "(Ref.: https://pydantic-docs.helpmanual.io/usage/models/#generic-models)"
+    ),
+)
 def test_generics(tmpdir):
     run_test(tmpdir, "generics")
 
@@ -68,16 +73,22 @@ def test_excluding_models(tmpdir):
 
 def test_relative_filepath(tmpdir):
     test_name = "single_module"
-    relative_path = os.path.join(".", "tests", "expected_results", test_name, "input.py")
+    relative_path = os.path.join(
+        ".", "tests", "expected_results", test_name, "input.py"
+    )
     run_test(
-        tmpdir, "single_module", module_path=relative_path,
+        tmpdir,
+        "single_module",
+        module_path=relative_path,
     )
 
 
 def test_calling_from_python(tmpdir):
     run_test(tmpdir, "single_module", call_from_python=True)
-    run_test(tmpdir, "submodules", call_from_python=True)
-    run_test(tmpdir, "generics", call_from_python=True)
+    if sys.version_info >= (3, 8):
+        run_test(tmpdir, "submodules", call_from_python=True)
+    if sys.version_info >= (3, 7):
+        run_test(tmpdir, "generics", call_from_python=True)
     run_test(
         tmpdir,
         "excluding_models",

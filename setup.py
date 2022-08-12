@@ -35,8 +35,11 @@ setup(
     author="Phillip Dupuis",
     author_email="phillip_dupuis@alumni.brown.edu",
     url="https://github.com/phillipdupuis/pydantic-to-typescript",
-    packages=find_packages(),
+    packages=find_packages(exclude=["tests*"]),
     install_requires=install_requires,
+    extras_require={
+        "dev": ["pytest", "pytest-cov", "coverage"],
+    },
     entry_points={"console_scripts": ["pydantic2ts = pydantic2ts.cli.script:main"]},
     classifiers=classifiers,
 )
