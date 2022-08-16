@@ -20,13 +20,12 @@ classifiers = [
 ]
 
 install_requires = [
-    "click",
     "pydantic",
 ]
 
 setup(
     name="pydantic-to-typescript",
-    version="1.0.8",
+    version="1.0.9",
     description="Convert pydantic models to typescript interfaces",
     license="MIT",
     long_description=readme(),

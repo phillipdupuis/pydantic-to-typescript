@@ -1,3 +1,4 @@
+import argparse
 import importlib
 import inspect
 import json
@@ -5,13 +6,12 @@ import logging
 import os
 import shutil
 import sys
-from importlib.util import spec_from_file_location, module_from_spec
+from importlib.util import module_from_spec, spec_from_file_location
 from tempfile import mkdtemp
 from types import ModuleType
-from typing import Type, Dict, Any, List, Tuple
+from typing import Any, Dict, List, Tuple, Type
 from uuid import uuid4
 
-import click
 from pydantic import BaseModel, Extra, create_model
 
 try:
@@ -217,28 +217,48 @@ def generate_typescript_defs(
     logger.info(f"Saved typescript definitions to {output}.")
 
 
-@click.command()
-@click.option(
-    "--module",
-    help="name or filepath of the python module. Discoverable submodules will also be checked",
-)
-@click.option(
-    "--output", help="name of the file the typescript definitions should be written to"
-)
-@click.option(
-    "--exclude",
-    multiple=True,
-    help="name of a pydantic model which should be omitted from the results. This option can be defined multiple times",
-)
-@click.option("--json2ts-cmd", default="json2ts")
-def main(
-    module: str, output: str, exclude: Tuple[str], json2ts_cmd: str = "json2ts"
-) -> None:
+def main() -> None:
     """
     CLI entrypoint to run :func:`generate_typescript_defs`
     """
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
-    return generate_typescript_defs(module, output, exclude, json2ts_cmd)
+
+    parser = argparse.ArgumentParser(
+        prog="pydantic2ts",
+        description=main.__doc__,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "--module",
+        help="name or filepath of the python module.\n"
+        "Discoverable submodules will also be checked.",
+    )
+    parser.add_argument(
+        "--output",
+        help="name of the file the typescript definitions should be written to.",
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        help="name of a pydantic model which should be omitted from the results.\n"
+        "This option can be defined multiple times.",
+    )
+    parser.add_argument(
+        "--json2ts-cmd",
+        dest="json2ts_cmd",
+        default="json2ts",
+        help="path to the json-schema-to-typescript executable.\n" "(default: json2ts)",
+    )
+
+    args = parser.parse_args()
+
+    return generate_typescript_defs(
+        args.module,
+        args.output,
+        tuple(args.exclude),
+        args.json2ts_cmd,
+    )
 
 
 if __name__ == "__main__":
