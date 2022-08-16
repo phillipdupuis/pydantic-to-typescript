@@ -217,12 +217,10 @@ def generate_typescript_defs(
     logger.info(f"Saved typescript definitions to {output}.")
 
 
-def main() -> None:
+def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
     """
-    CLI entrypoint to run :func:`generate_typescript_defs`
+    Parses the command-line arguments passed to pydantic2ts.
     """
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
-
     parser = argparse.ArgumentParser(
         prog="pydantic2ts",
         description=main.__doc__,
@@ -250,9 +248,15 @@ def main() -> None:
         default="json2ts",
         help="path to the json-schema-to-typescript executable.\n" "(default: json2ts)",
     )
+    return parser.parse_args(args)
 
-    args = parser.parse_args()
 
+def main() -> None:
+    """
+    CLI entrypoint to run :func:`generate_typescript_defs`
+    """
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
+    args = parse_cli_args()
     return generate_typescript_defs(
         args.module,
         args.output,
