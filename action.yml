@@ -90,3 +90,7 @@ runs:
       run: |
         echo "Typescript definitions and pydantic models are out of sync"
         exit 1
+
+branding:
+  icon: check-circle
+  color: green
