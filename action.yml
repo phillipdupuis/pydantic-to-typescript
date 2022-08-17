@@ -1,7 +1,6 @@
 name: Pydantic to Typescript
 description: |
   Convert pydantic models into typescript definitions and ensure that your type definitions are in sync.
-  If a mismatch is detected, a pull request will automatically be opened.
 author: Phillip Dupuis
 
 inputs:
