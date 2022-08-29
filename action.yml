@@ -1,0 +1,96 @@
+name: Pydantic to Typescript
+description: |
+  Convert pydantic models into typescript definitions and ensure that your type definitions are in sync.
+author: Phillip Dupuis
+
+inputs:
+  python-module:
+    required: true
+    description: >
+      name or filepath of the root python module.
+      Typescript interfaces will be generated for all of the pydantic models
+      contained within this module and its discoverable submodules.
+  # TODO: maybe add ts-repo option? In case the typescript stuff is in a different repository. (But default to current repo if unspecified)
+  ts-file:
+    required: true
+    description: >
+      path to the file where the resulting typescript definitions will be saved.
+      Example: './frontend/apiTypes.ts'.
+  exclude-models:
+    required: false
+    default: ""
+    description: >
+      comma-separated list of the names of any pydantic models which should
+      be omitted from the resulting typescript definitions.
+  fail-on-mismatch:
+    required: false
+    type: boolean
+    default: true
+    description: >
+      Boolean flag indicating if type definition mismatches should cause this action to fail.
+  GITHUB_TOKEN:
+    required: false
+    description: >
+      Value for secrets.GITHUB_TOKEN, necessary for pull requests to be automatically opened.
+
+outputs:
+  mismatch:
+    value: ${{ steps.check-ts-defs.outputs.files_changed || 'false' }}
+    description: >
+      If true, the current typescript definitions in 'inputs.ts-file' are different
+      from the ones which were automatically generated from the pydantic models.
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ">=3.6 <=3.10"
+    - name: Install pydantic-to-typescript
+      shell: bash
+      run: |
+        python -m pip install -U pip wheel pydantic-to-typescript
+    - name: Set up Node.js 16
+      uses: actions/setup-node@v3
+      with:
+        node-version: 16
+    - name: Install json-schema-to-typescript
+      shell: bash
+      run: |
+        npm i json-schema-to-typescript --location=global
+    - name: Run pydantic2ts
+      shell: bash
+      env:
+        INPUT_PY_MODULE: ${{ inputs.python-module }}
+        INPUT_TS_FILE: ${{ inputs.ts-file }}
+        INPUT_EXCLUDE_MODELS: ${{ inputs.exclude-models }}
+      run: |
+        CMD="pydantic2ts --module $INPUT_PY_MODULE --output $INPUT_TS_FILE"
+        for model in ${INPUT_EXCLUDE_MODELS//,/ }
+        do
+            CMD+=" --exclude $model"
+        done
+        eval "$CMD"
+    - name: Check if typescript definitions changed
+      uses: tj-actions/verify-changed-files@v10.1
+      id: check-ts-defs
+      with:
+        files: ${{ inputs.ts-file }}
+    - name: create pull request for typescript definition updates
+      if: steps.check-ts-defs.outputs.files_changed == 'true'
+      uses: peter-evans/create-pull-request@v4
+      with:
+        token: ${{ inputs.GITHUB_TOKEN }}
+        add-paths: ${{ inputs.ts-file }}
+        branch: update-ts-definitions
+    - name: halt execution if type definition mismatch detected
+      if: inputs.fail-on-mismatch == 'true' && steps.check-ts-defs.outputs.files_changed == 'true'
+      shell: bash
+      run: |
+        echo "Typescript definitions and pydantic models are out of sync"
+        exit 1
+
+branding:
+  icon: check-circle
+  color: green

@@ -1,3 +1,4 @@
+import argparse
 import importlib
 import inspect
 import json
@@ -5,13 +6,12 @@ import logging
 import os
 import shutil
 import sys
-from importlib.util import spec_from_file_location, module_from_spec
+from importlib.util import module_from_spec, spec_from_file_location
 from tempfile import mkdtemp
 from types import ModuleType
-from typing import Type, Dict, Any, List, Tuple
+from typing import Any, Dict, List, Tuple, Type
 from uuid import uuid4
 
-import click
 from pydantic import BaseModel, Extra, create_model
 
 try:
@@ -40,7 +40,7 @@ def import_module(path: str) -> ModuleType:
             return module
         else:
             return importlib.import_module(path)
-    except BaseException as e:
+    except Exception as e:
         logger.error(
             "The --module argument must be a module path separated by dots or a valid filepath"
         )
@@ -106,7 +106,17 @@ def remove_master_model_from_output(output: str) -> None:
             end = i
             break
 
-    new_lines = lines[:start] + lines[(end + 1) :]
+    banner_comment_lines = [
+        "/* tslint:disable */\n",
+        "/* eslint-disable */\n",
+        "/**\n",
+        "/* This file was automatically generated from pydantic models by running pydantic2ts.\n",
+        "/* Do not modify it by hand - just update the pydantic models and then re-run the script\n",
+        "*/\n\n",
+    ]
+
+    new_lines = banner_comment_lines + lines[:start] + lines[(end + 1) :]
+
     with open(output, "w") as f:
         f.writelines(new_lines)
 
@@ -199,52 +209,66 @@ def generate_typescript_defs(
         f.write(schema)
 
     logger.info("Converting JSON schema to typescript definitions...")
-
-    banner_comment = "\n".join(
-        [
-            "/* tslint:disable */",
-            "/* eslint-disable */",
-            "/**",
-            "/* This file was automatically generated from pydantic models by running pydantic2ts.",
-            "/* Do not modify it by hand - just update the pydantic models and then re-run the script",
-            "*/",
-        ]
+    
+    json2ts_exit_code = os.system(
+        f'{json2ts_cmd} -i {schema_file_path} -o {output} --bannerComment ""'
     )
-    status = os.system(
-        f'{json2ts_cmd} -i {schema_file_path} -o {output} --bannerComment "{banner_comment}"'
-    )
-
-    if status == 0:
+    
+    if json2ts_exit_code == 0:
         remove_master_model_from_output(output)
         logger.info(f"Saved typescript definitions to {output}.")
     else:
-        logger.error(f"{json2ts_cmd} failed with exit code {status}.")
+        logger.error(f"{json2ts_cmd} failed with exit code {json2ts_exit_code}.")
 
     shutil.rmtree(schema_dir)
 
 
-@click.command()
-@click.option(
-    "--module",
-    help="name or filepath of the python module. Discoverable submodules will also be checked",
-)
-@click.option(
-    "--output", help="name of the file the typescript definitions should be written to"
-)
-@click.option(
-    "--exclude",
-    multiple=True,
-    help="name of a pydantic model which should be omitted from the results. This option can be defined multiple times",
-)
-@click.option("--json2ts-cmd", default="json2ts")
-def main(
-    module: str, output: str, exclude: Tuple[str], json2ts_cmd: str = "json2ts"
-) -> None:
+def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
+    """
+    Parses the command-line arguments passed to pydantic2ts.
+    """
+    parser = argparse.ArgumentParser(
+        prog="pydantic2ts",
+        description=main.__doc__,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "--module",
+        help="name or filepath of the python module.\n"
+        "Discoverable submodules will also be checked.",
+    )
+    parser.add_argument(
+        "--output",
+        help="name of the file the typescript definitions should be written to.",
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        help="name of a pydantic model which should be omitted from the results.\n"
+        "This option can be defined multiple times.",
+    )
+    parser.add_argument(
+        "--json2ts-cmd",
+        dest="json2ts_cmd",
+        default="json2ts",
+        help="path to the json-schema-to-typescript executable.\n" "(default: json2ts)",
+    )
+    return parser.parse_args(args)
+
+
+def main() -> None:
     """
     CLI entrypoint to run :func:`generate_typescript_defs`
     """
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
-    return generate_typescript_defs(module, output, exclude, json2ts_cmd)
+    args = parse_cli_args()
+    return generate_typescript_defs(
+        args.module,
+        args.output,
+        tuple(args.exclude),
+        args.json2ts_cmd,
+    )
 
 
 if __name__ == "__main__":
