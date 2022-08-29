@@ -209,11 +209,11 @@ def generate_typescript_defs(
         f.write(schema)
 
     logger.info("Converting JSON schema to typescript definitions...")
-    
+
     json2ts_exit_code = os.system(
         f'{json2ts_cmd} -i {schema_file_path} -o {output} --bannerComment ""'
     )
-    
+
     if json2ts_exit_code == 0:
         remove_master_model_from_output(output)
         logger.info(f"Saved typescript definitions to {output}.")
