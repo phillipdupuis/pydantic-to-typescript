@@ -101,15 +101,35 @@ def test_calling_from_python(tmpdir):
 
 
 def test_error_if_json2ts_not_installed(tmpdir):
-    with pytest.raises(Exception) as exc:
-        module_path = get_input_module("single_module")
-        output_path = tmpdir.join(f"cli_single_module.ts").strpath
-        json2ts_cmd = "someCommandWhichDefinitelyDoesNotExist"
-        generate_typescript_defs(module_path, output_path, json2ts_cmd=json2ts_cmd)
+    module_path = get_input_module("single_module")
+    output_path = tmpdir.join(f"cli_single_module.ts").strpath
+
+    # If the json2ts command has no spaces and the executable cannot be found,
+    # that means the user either hasn't installed json-schema-to-typescript or they made a typo.
+    # We should raise a descriptive error with installation instructions.
+    invalid_global_cmd = "someCommandWhichDefinitelyDoesNotExist"
+    with pytest.raises(Exception) as exc1:
+        generate_typescript_defs(
+            module_path,
+            output_path,
+            json2ts_cmd=invalid_global_cmd,
+        )
     assert (
-        str(exc.value)
-        == "json2ts must be installed. Instructions can be found here: https://www.npmjs.com/package/json-schema-to-typescript"
+        str(exc1.value)
+        == "json2ts must be installed. Instructions can be founds here: https://www.npmjs.com/package/json-schema-to-typescript"
     )
+
+    # But if the command DOES contain spaces (ex: "yarn json2ts") they're likely using a locally installed CLI.
+    # We should not be validating the command in this case.
+    # Instead we should just be *trying* to run it and checking the exit code.
+    invalid_local_cmd = "yaaaarn json2tsbutwithatypo"
+    with pytest.raises(RuntimeError) as exc2:
+        generate_typescript_defs(
+            module_path,
+            output_path,
+            json2ts_cmd=invalid_local_cmd,
+        )
+    assert str(exc2.value).startswith(f'"{invalid_local_cmd}" failed with exit code ')
 
 
 def test_error_if_invalid_module_path(tmpdir):
