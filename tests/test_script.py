@@ -116,7 +116,7 @@ def test_error_if_json2ts_not_installed(tmpdir):
         )
     assert (
         str(exc1.value)
-        == "json2ts must be installed. Instructions can be founds here: https://www.npmjs.com/package/json-schema-to-typescript"
+        == "json2ts must be installed. Instructions can be found here: https://www.npmjs.com/package/json-schema-to-typescript"
     )
 
     # But if the command DOES contain spaces (ex: "yarn json2ts") they're likely using a locally installed CLI.
