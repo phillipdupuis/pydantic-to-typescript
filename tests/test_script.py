@@ -5,7 +5,7 @@ import sys
 import pytest
 
 from pydantic2ts import generate_typescript_defs
-from pydantic2ts.cli.script import parse_cli_args
+from pydantic2ts.cli.script import _parse_cli_args
 
 
 def _results_directory() -> str:
@@ -140,12 +140,14 @@ def test_error_if_invalid_module_path(tmpdir):
 
 
 def test_parse_cli_args():
-    args_basic = parse_cli_args(["--module", "my_module.py", "--output", "myOutput.ts"])
+    args_basic = _parse_cli_args(
+        ["--module", "my_module.py", "--output", "myOutput.ts"]
+    )
     assert args_basic.module == "my_module.py"
     assert args_basic.output == "myOutput.ts"
     assert args_basic.exclude == []
     assert args_basic.json2ts_cmd == "json2ts"
-    args_with_excludes = parse_cli_args(
+    args_with_excludes = _parse_cli_args(
         [
             "--module",
             "my_module.py",

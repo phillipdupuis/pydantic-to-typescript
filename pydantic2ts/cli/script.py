@@ -3,10 +3,12 @@ import importlib
 import inspect
 import json
 import logging
-import os
+import shlex
 import shutil
+import subprocess
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from tempfile import mkdtemp
 from types import ModuleType
 from typing import Any, Dict, List, Tuple, Type
@@ -22,7 +24,7 @@ except ImportError:
 logger = logging.getLogger("pydantic2ts")
 
 
-def import_module(path: str) -> ModuleType:
+def _import_module(path: str) -> ModuleType:
     """
     Helper which allows modules to be specified by either dotted path notation or by filepath.
 
@@ -31,7 +33,7 @@ def import_module(path: str) -> ModuleType:
     definition exist in sys.modules under that name.
     """
     try:
-        if os.path.exists(path):
+        if Path(path).exists():
             name = uuid4().hex
             spec = spec_from_file_location(name, path, submodule_search_locations=[])
             module = module_from_spec(spec)
@@ -47,7 +49,7 @@ def import_module(path: str) -> ModuleType:
         raise e
 
 
-def is_submodule(obj, module_name: str) -> bool:
+def _is_submodule(obj, module_name: str) -> bool:
     """
     Return true if an object is a submodule
     """
@@ -56,7 +58,7 @@ def is_submodule(obj, module_name: str) -> bool:
     )
 
 
-def is_concrete_pydantic_model(obj) -> bool:
+def _is_concrete_pydantic_model(obj) -> bool:
     """
     Return true if an object is a concrete subclass of pydantic's BaseModel.
     'concrete' meaning that it's not a GenericModel.
@@ -71,25 +73,25 @@ def is_concrete_pydantic_model(obj) -> bool:
         return issubclass(obj, BaseModel)
 
 
-def extract_pydantic_models(module: ModuleType) -> List[Type[BaseModel]]:
+def _extract_pydantic_models(module: ModuleType) -> List[Type[BaseModel]]:
     """
     Given a module, return a list of the pydantic models contained within it.
     """
     models = []
     module_name = module.__name__
 
-    for _, model in inspect.getmembers(module, is_concrete_pydantic_model):
+    for _, model in inspect.getmembers(module, _is_concrete_pydantic_model):
         models.append(model)
 
     for _, submodule in inspect.getmembers(
-        module, lambda obj: is_submodule(obj, module_name)
+        module, lambda obj: _is_submodule(obj, module_name)
     ):
-        models.extend(extract_pydantic_models(submodule))
+        models.extend(_extract_pydantic_models(submodule))
 
     return models
 
 
-def clean_output_file(output_filename: str) -> None:
+def _clean_output_file(output_filename: str) -> None:
     """
     Clean up the output file typescript definitions were written to by:
     1. Removing the 'master model'.
@@ -124,7 +126,7 @@ def clean_output_file(output_filename: str) -> None:
         f.writelines(new_lines)
 
 
-def clean_schema(schema: Dict[str, Any]) -> None:
+def _clean_schema(schema: Dict[str, Any]) -> None:
     """
     Clean up the resulting JSON schemas by:
 
@@ -141,7 +143,7 @@ def clean_schema(schema: Dict[str, Any]) -> None:
         del schema["description"]
 
 
-def generate_json_schema(models: List[Type[BaseModel]]) -> str:
+def _generate_json_schema(models: List[Type[BaseModel]]) -> str:
     """
     Create a top-level '_Master_' model with references to each of the actual models.
     Generate the schema for this model, which will include the schemas for all the
@@ -163,12 +165,12 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
             "_Master_", **{m.__name__: (m, ...) for m in models}
         )
         master_model.Config.extra = Extra.forbid
-        master_model.Config.schema_extra = staticmethod(clean_schema)
+        master_model.Config.schema_extra = staticmethod(_clean_schema)
 
         schema = json.loads(master_model.schema_json())
 
         for d in schema.get("definitions", {}).values():
-            clean_schema(d)
+            _clean_schema(d)
 
         return json.dumps(schema, indent=2)
 
@@ -198,44 +200,50 @@ def generate_typescript_defs(
 
     logger.info("Finding pydantic models...")
 
-    models = extract_pydantic_models(import_module(module))
+    models = _extract_pydantic_models(_import_module(module))
 
     if exclude:
         models = [m for m in models if m.__name__ not in exclude]
 
     logger.info("Generating JSON schema from pydantic models...")
 
-    schema = generate_json_schema(models)
-    schema_dir = mkdtemp()
-    schema_file_path = os.path.join(schema_dir, "schema.json")
-
-    with open(schema_file_path, "w") as f:
-        f.write(schema)
+    schema = _generate_json_schema(models)
+    schema_dir = Path(mkdtemp())
+    schema_file_path = schema_dir.joinpath("schema.json")
+    schema_file_path.write_text(schema)
 
     logger.info("Converting JSON schema to typescript definitions...")
 
-    json2ts_exit_code = os.system(
-        f'{json2ts_cmd} -i {schema_file_path} -o {output} --bannerComment ""'
+    json2ts_result = subprocess.run(
+        [
+            *shlex.split(json2ts_cmd),
+            "-i",
+            schema_file_path,
+            "-o",
+            output,
+            "--banner-comment",
+            "",
+        ]
     )
 
     shutil.rmtree(schema_dir)
 
-    if json2ts_exit_code == 0:
-        clean_output_file(output)
+    if json2ts_result.returncode == 0:
+        _clean_output_file(output)
         logger.info(f"Saved typescript definitions to {output}.")
     else:
         raise RuntimeError(
-            f'"{json2ts_cmd}" failed with exit code {json2ts_exit_code}.'
+            f'"{json2ts_cmd}" failed with exit code {json2ts_result.returncode}.'
         )
 
 
-def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
+def _parse_cli_args(args: List[str] = None) -> argparse.Namespace:
     """
     Parses the command-line arguments passed to pydantic2ts.
     """
     parser = argparse.ArgumentParser(
         prog="pydantic2ts",
-        description=main.__doc__,
+        description=_main.__doc__,
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
@@ -265,12 +273,12 @@ def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
     return parser.parse_args(args)
 
 
-def main() -> None:
+def _main() -> None:
     """
     CLI entrypoint to run :func:`generate_typescript_defs`
     """
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(message)s")
-    args = parse_cli_args()
+    args = _parse_cli_args()
     return generate_typescript_defs(
         args.module,
         args.output,
@@ -280,4 +288,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    _main()
