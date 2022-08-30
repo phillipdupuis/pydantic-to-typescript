@@ -7,7 +7,7 @@ def readme():
 
 
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
@@ -25,7 +25,7 @@ install_requires = [
 
 setup(
     name="pydantic-to-typescript",
-    version="1.0.9",
+    version="1.0.10",
     description="Convert pydantic models to typescript interfaces",
     license="MIT",
     long_description=readme(),

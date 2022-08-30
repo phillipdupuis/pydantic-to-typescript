@@ -23,7 +23,7 @@ $ pip install pydantic-to-typescript
 | &#8209;&#8209;module            | name or filepath of the python module you would like to convert. All the pydantic models within it will be converted to typescript interfaces. Discoverable submodules will also be checked.                                     |
 | &#8209;&#8209;output            | name of the file the typescript definitions should be written to. Ex: './frontend/apiTypes.ts'                                                                                                                                   |
 | &#8209;&#8209;exclude           | name of a pydantic model which should be omitted from the resulting typescript definitions. This option can be defined multiple times, ex: `--exclude Foo --exclude Bar` to exclude both the Foo and Bar models from the output. |
-| &#8209;&#8209;json2ts&#8209;cmd | optional, the command used to invoke json2ts. The default is 'json2ts'. Specify this if you have it installed in a strange location and need to provide the exact path (ex: /myproject/node_modules/bin/json2ts)                 |
+| &#8209;&#8209;json2ts&#8209;cmd | optional, the command used to invoke json2ts. The default is 'json2ts'. Specify this if you have it installed locally (ex: 'yarn json2ts') or if the exact path to the executable is required (ex: /myproject/node_modules/bin/json2ts)                 |
 
 ---
 

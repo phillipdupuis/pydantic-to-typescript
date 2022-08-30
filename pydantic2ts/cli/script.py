@@ -89,13 +89,16 @@ def extract_pydantic_models(module: ModuleType) -> List[Type[BaseModel]]:
     return models
 
 
-def remove_master_model_from_output(output: str) -> None:
+def clean_output_file(output_filename: str) -> None:
     """
-    A faux 'master model' with references to all the pydantic models is necessary for generating
-    clean typescript definitions without any duplicates, but we don't actually want it in the
-    output. This function handles removing it from the generated typescript file.
+    Clean up the output file typescript definitions were written to by:
+    1. Removing the 'master model'.
+       This is a faux pydantic model with references to all the *actual* models necessary for generating
+       clean typescript definitions without any duplicates. We don't actually want it in the output, so
+       this function removes it from the generated typescript file.
+    2. Adding a banner comment with clear instructions for how to regenerate the typescript definitions.
     """
-    with open(output, "r") as f:
+    with open(output_filename, "r") as f:
         lines = f.readlines()
 
     start, end = None, None
@@ -117,7 +120,7 @@ def remove_master_model_from_output(output: str) -> None:
 
     new_lines = banner_comment_lines + lines[:start] + lines[(end + 1) :]
 
-    with open(output, "w") as f:
+    with open(output_filename, "w") as f:
         f.writelines(new_lines)
 
 
@@ -184,9 +187,10 @@ def generate_typescript_defs(
     :param module: python module containing pydantic model definitions, ex: my_project.api.schemas
     :param output: file that the typescript definitions will be written to
     :param exclude: optional, a tuple of names for pydantic models which should be omitted from the typescript output.
-    :param json2ts_cmd: optional, the command that will execute json2ts. Use this if it's installed in a strange spot.
+    :param json2ts_cmd: optional, the command that will execute json2ts. Provide this if the executable is not
+                        discoverable or if it's locally installed (ex: 'yarn json2ts').
     """
-    if not shutil.which(json2ts_cmd):
+    if " " not in json2ts_cmd and not shutil.which(json2ts_cmd):
         raise Exception(
             "json2ts must be installed. Instructions can be found here: "
             "https://www.npmjs.com/package/json-schema-to-typescript"
@@ -214,13 +218,15 @@ def generate_typescript_defs(
         f'{json2ts_cmd} -i {schema_file_path} -o {output} --bannerComment ""'
     )
 
+    shutil.rmtree(schema_dir)
+
     if json2ts_exit_code == 0:
-        remove_master_model_from_output(output)
+        clean_output_file(output)
         logger.info(f"Saved typescript definitions to {output}.")
     else:
-        logger.error(f"{json2ts_cmd} failed with exit code {json2ts_exit_code}.")
-
-    shutil.rmtree(schema_dir)
+        raise RuntimeError(
+            f'"{json2ts_cmd}" failed with exit code {json2ts_exit_code}.'
+        )
 
 
 def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
@@ -252,7 +258,9 @@ def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
         "--json2ts-cmd",
         dest="json2ts_cmd",
         default="json2ts",
-        help="path to the json-schema-to-typescript executable.\n" "(default: json2ts)",
+        help="path to the json-schema-to-typescript executable.\n"
+        "Provide this if it's not discoverable or if it's only installed locally (example: 'yarn json2ts').\n"
+        "(default: json2ts)",
     )
     return parser.parse_args(args)
 
