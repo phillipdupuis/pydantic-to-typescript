@@ -31,6 +31,11 @@ Discoverable submodules will also be checked.
 This option can be defined multiple times,
 ex: `--exclude Foo --exclude Bar` to exclude both the Foo and Bar models from the output. \
 
+`--readonly-interfaces`
+: do not mark non-optional properties with default values as optional in the generated interfaces. \
+This is useful if you want an interface for data that is returned by an API (default values are not empty),
+in contrast to an interface for data that is sent to an API (default values may be empty).
+
 `--json2ts-cmd JSON2TS_CMD`
 : optional, the command used to invoke json2ts. \
 Specify this if you have json-schema-to-typescript installed locally (ex: 'yarn json2ts')

@@ -16,14 +16,14 @@ def get_input_module(test_name: str) -> str:
     return os.path.join(_results_directory(), test_name, "input.py")
 
 
-def get_expected_output(test_name: str) -> str:
-    path = os.path.join(_results_directory(), test_name, "output.ts")
+def get_expected_output(test_name: str, output_suffix: str) -> str:
+    path = os.path.join(_results_directory(), test_name, f"output{output_suffix}.ts")
     with open(path, "r") as f:
         return f.read()
 
 
 def run_test(
-    tmpdir, test_name, *, module_path=None, call_from_python=False, exclude=()
+        tmpdir, test_name, *, module_path=None, call_from_python=False, exclude=(), readonly_interfaces: bool = False
 ):
     """
     Execute pydantic2ts logic for converting pydantic models into tyepscript definitions.
@@ -33,16 +33,20 @@ def run_test(
     output_path = tmpdir.join(f"cli_{test_name}.ts").strpath
 
     if call_from_python:
-        generate_typescript_defs(module_path, output_path, exclude)
+        generate_typescript_defs(module_path, output_path, exclude=exclude, readonly_interfaces=readonly_interfaces)
     else:
         cmd = f"pydantic2ts --module {module_path} --output {output_path}"
         for model_to_exclude in exclude:
             cmd += f" --exclude {model_to_exclude}"
+        if readonly_interfaces:
+            cmd += " --readonly-interfaces"
         subprocess.run(cmd, shell=True)
 
     with open(output_path, "r") as f:
         output = f.read()
-    assert output == get_expected_output(test_name)
+    output_suffix = ""
+    if readonly_interfaces: output_suffix = "_readonly_interfaces"
+    assert output == get_expected_output(test_name, output_suffix)
 
 
 def test_single_module(tmpdir):
@@ -66,6 +70,18 @@ def test_submodules(tmpdir):
 )
 def test_generics(tmpdir):
     run_test(tmpdir, "generics")
+
+
+def test_optionals_read(tmpdir):
+    run_test(
+        tmpdir, "optionals", readonly_interfaces=True
+    )
+
+
+def test_optionals_write(tmpdir):
+    run_test(
+        tmpdir, "optionals", readonly_interfaces=False
+    )
 
 
 def test_excluding_models(tmpdir):
@@ -92,6 +108,18 @@ def test_calling_from_python(tmpdir):
         run_test(tmpdir, "submodules", call_from_python=True)
     if sys.version_info >= (3, 7):
         run_test(tmpdir, "generics", call_from_python=True)
+    run_test(
+        tmpdir,
+        "optionals",
+        call_from_python=True,
+        readonly_interfaces=True,
+    )
+    run_test(
+        tmpdir,
+        "optionals",
+        call_from_python=True,
+        readonly_interfaces=False,
+    )
     run_test(
         tmpdir,
         "excluding_models",

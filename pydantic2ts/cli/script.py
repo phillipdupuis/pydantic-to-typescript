@@ -9,10 +9,11 @@ import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from tempfile import mkdtemp
 from types import ModuleType
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any, Dict, List, Tuple, Type, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Extra, create_model
+from pydantic.fields import ModelField
 
 try:
     from pydantic.generics import GenericModel
@@ -141,7 +142,7 @@ def clean_schema(schema: Dict[str, Any]) -> None:
         del schema["description"]
 
 
-def generate_json_schema(models: List[Type[BaseModel]]) -> str:
+def generate_json_schema(models: List[Type[BaseModel]], readonly_interfaces: bool) -> str:
     """
     Create a top-level '_Master_' model with references to each of the actual models.
     Generate the schema for this model, which will include the schemas for all the
@@ -152,6 +153,13 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
     '[k: string]: any' from being added to every interface. This change is reverted
     once the schema has been generated.
     """
+
+    def find_model(name: str) -> Optional[Type[BaseModel]]:
+        return next((m for m in models if m.__name__ == name), None)
+
+    def find_field(prop: str, model_: Type[BaseModel]) -> ModelField:
+        return next(f for f in model_.__fields__.values() if f.alias == prop)
+
     model_extras = [getattr(m.Config, "extra", None) for m in models]
 
     try:
@@ -170,6 +178,12 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
         for d in schema.get("definitions", {}).values():
             clean_schema(d)
 
+            if readonly_interfaces:
+                model = find_model(d["title"])
+                if model is not None:
+                    props = d.get("properties", {}).keys()
+                    d["required"] = list(prop for prop in props if not find_field(prop, model).allow_none)
+
         return json.dumps(schema, indent=2)
 
     finally:
@@ -179,7 +193,7 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
 
 
 def generate_typescript_defs(
-    module: str, output: str, exclude: Tuple[str] = (), json2ts_cmd: str = "json2ts"
+    module: str, output: str, exclude: Tuple[str] = (), readonly_interfaces: bool = False, json2ts_cmd: str = "json2ts",
 ) -> None:
     """
     Convert the pydantic models in a python module into typescript interfaces.
@@ -189,6 +203,8 @@ def generate_typescript_defs(
     :param exclude: optional, a tuple of names for pydantic models which should be omitted from the typescript output.
     :param json2ts_cmd: optional, the command that will execute json2ts. Provide this if the executable is not
                         discoverable or if it's locally installed (ex: 'yarn json2ts').
+    :param readonly_interfaces: optional, do not mark non-optional properties with default values as optional
+                                in the generated interfaces.
     """
     if " " not in json2ts_cmd and not shutil.which(json2ts_cmd):
         raise Exception(
@@ -205,7 +221,7 @@ def generate_typescript_defs(
 
     logger.info("Generating JSON schema from pydantic models...")
 
-    schema = generate_json_schema(models)
+    schema = generate_json_schema(models, readonly_interfaces)
     schema_dir = mkdtemp()
     schema_file_path = os.path.join(schema_dir, "schema.json")
 
@@ -257,6 +273,14 @@ def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
         "ex: `--exclude Foo --exclude Bar` to exclude both the Foo and Bar models from the output.",
     )
     parser.add_argument(
+        "--readonly-interfaces",
+        dest="readonly_interfaces",
+        action="store_true",
+        help="do not mark non-optional properties with default values as optional in the generated interfaces.\n"
+        "This is useful if you want an interface for data that is returned by an API (default values are not empty),\n"
+        "in contrast to an interface for data that is sent to an API (default values may be empty).",
+    )
+    parser.add_argument(
         "--json2ts-cmd",
         dest="json2ts_cmd",
         default="json2ts",
@@ -277,8 +301,9 @@ def main() -> None:
     return generate_typescript_defs(
         args.module,
         args.output,
-        tuple(args.exclude),
-        args.json2ts_cmd,
+        exclude=tuple(args.exclude),
+        readonly_interfaces=args.readonly_interfaces,
+        json2ts_cmd=args.json2ts_cmd,
     )
 
 
