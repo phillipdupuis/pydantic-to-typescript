@@ -141,7 +141,7 @@ def clean_schema(schema: Dict[str, Any]) -> None:
         del schema["description"]
 
 
-def generate_json_schema(models: List[Type[BaseModel]]) -> str:
+def generate_json_schema(models: List[Type[BaseModel]], no_optional_props: bool) -> str:
     """
     Create a top-level '_Master_' model with references to each of the actual models.
     Generate the schema for this model, which will include the schemas for all the
@@ -170,6 +170,9 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
         for d in schema.get("definitions", {}).values():
             clean_schema(d)
 
+            if no_optional_props:
+                d["required"] = list(d.get("properties", {}).keys())
+
         return json.dumps(schema, indent=2)
 
     finally:
@@ -179,7 +182,7 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
 
 
 def generate_typescript_defs(
-    module: str, output: str, exclude: Tuple[str] = (), json2ts_cmd: str = "json2ts"
+    module: str, output: str, exclude: Tuple[str] = (), json2ts_cmd: str = "json2ts", no_optional_props: bool = False,
 ) -> None:
     """
     Convert the pydantic models in a python module into typescript interfaces.
@@ -189,6 +192,7 @@ def generate_typescript_defs(
     :param exclude: optional, a tuple of names for pydantic models which should be omitted from the typescript output.
     :param json2ts_cmd: optional, the command that will execute json2ts. Provide this if the executable is not
                         discoverable or if it's locally installed (ex: 'yarn json2ts').
+    :param no_optional_props: optional, do not mark any properties optional in the generated interfaces.
     """
     if " " not in json2ts_cmd and not shutil.which(json2ts_cmd):
         raise Exception(
@@ -205,7 +209,7 @@ def generate_typescript_defs(
 
     logger.info("Generating JSON schema from pydantic models...")
 
-    schema = generate_json_schema(models)
+    schema = generate_json_schema(models, no_optional_props)
     schema_dir = mkdtemp()
     schema_file_path = os.path.join(schema_dir, "schema.json")
 
@@ -262,6 +266,16 @@ def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
         "Provide this if it's not discoverable or if it's only installed locally (example: 'yarn json2ts').\n"
         "(default: json2ts)",
     )
+    parser.add_argument(
+        "--no-optional-props",
+        dest="no_optional_props",
+        action="store_true",
+        help="do not make any properties optional in the generated interfaces.\n"
+        "By default, properties with default values in Python will be marked optional in the TS.\n"
+        "This option disables this behavior.\n"
+        "This is useful if you want the interface to describe the type of pydantic_obj.dict(),\n"
+        "rather than the types that can legally passed to a model's constructor.",
+    )
     return parser.parse_args(args)
 
 
@@ -276,6 +290,7 @@ def main() -> None:
         args.output,
         tuple(args.exclude),
         args.json2ts_cmd,
+        args.no_optional_props,
     )
 
 
