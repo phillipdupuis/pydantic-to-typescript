@@ -240,27 +240,30 @@ def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--module",
-        help="name or filepath of the python module.\n"
+        help="name or filepath of the python module you would like to convert.\n"
+        "All the pydantic models within it will be converted to typescript interfaces.\n"
         "Discoverable submodules will also be checked.",
     )
     parser.add_argument(
         "--output",
-        help="name of the file the typescript definitions should be written to.",
+        help="name of the file the typescript definitions should be written to. Ex: './frontend/apiTypes.ts'",
     )
     parser.add_argument(
         "--exclude",
         action="append",
         default=[],
-        help="name of a pydantic model which should be omitted from the results.\n"
-        "This option can be defined multiple times.",
+        help="name of a pydantic model which should be omitted from the resulting typescript definitions.\n"
+        "This option can be defined multiple times,\n"
+        "ex: `--exclude Foo --exclude Bar` to exclude both the Foo and Bar models from the output.",
     )
     parser.add_argument(
         "--json2ts-cmd",
         dest="json2ts_cmd",
         default="json2ts",
-        help="path to the json-schema-to-typescript executable.\n"
-        "Provide this if it's not discoverable or if it's only installed locally (example: 'yarn json2ts').\n"
-        "(default: json2ts)",
+        help="optional, the command used to invoke json2ts.\n"
+             "Specify this if you have json-schema-to-typescript installed locally (ex: 'yarn json2ts')\n"
+             "or if the exact path to the executable is required (ex: /myproject/node_modules/bin/json2ts).\n"
+             "(default: json2ts)",
     )
     return parser.parse_args(args)
 
