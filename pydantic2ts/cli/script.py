@@ -105,6 +105,8 @@ def clean_output_file(output_filename: str) -> None:
     for i, line in enumerate(lines):
         if line.rstrip("\r\n") == "export interface _Master_ {":
             start = i
+        elif line.rstrip("\r\n") == "export interface _Master_ {}":
+            start = i
         elif (start is not None) and line.rstrip("\r\n") == "}":
             end = i
             break
