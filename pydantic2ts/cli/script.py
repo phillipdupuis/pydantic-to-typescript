@@ -101,13 +101,14 @@ def clean_output_file(output_filename: str) -> None:
     with open(output_filename, "r") as f:
         lines = f.readlines()
 
-    start, end = None, None
-    for i, line in enumerate(lines):
-        if line.rstrip("\r\n") == "export interface _Master_ {":
-            start = i
-        elif (start is not None) and line.rstrip("\r\n") == "}":
-            end = i
-            break
+    start, end = 0, 0
+    if len(lines) > 1:
+        for i, line in enumerate(lines):
+            if line.rstrip("\r\n") == "export interface _Master_ {":
+                start = i
+            elif (start is not None) and line.rstrip("\r\n") == "}":
+                end = i
+                break
 
     banner_comment_lines = [
         "/* tslint:disable */\n",
@@ -118,7 +119,10 @@ def clean_output_file(output_filename: str) -> None:
         "*/\n\n",
     ]
 
-    new_lines = banner_comment_lines + lines[:start] + lines[(end + 1) :]
+    try:
+        new_lines = banner_comment_lines + lines[:start] + lines[(end + 1) :]
+    except TypeError as err:
+        raise TypeError(f"{err}: output_filename: {output_filename}; {lines}")
 
     with open(output_filename, "w") as f:
         f.writelines(new_lines)
