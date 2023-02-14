@@ -101,13 +101,14 @@ def clean_output_file(output_filename: str) -> None:
     with open(output_filename, "r") as f:
         lines = f.readlines()
 
-    start, end = None, None
-    for i, line in enumerate(lines):
-        if line.rstrip("\r\n") == "export interface _Master_ {":
-            start = i
-        elif (start is not None) and line.rstrip("\r\n") == "}":
-            end = i
-            break
+    start, end = 0, 0
+    if len(lines) > 1:
+        for i, line in enumerate(lines):
+            if line.rstrip("\r\n") == "export interface _Master_ {":
+                start = i
+            elif (start is not None) and line.rstrip("\r\n") == "}":
+                end = i
+                break
 
     banner_comment_lines = [
         "/* tslint:disable */\n",
@@ -118,13 +119,16 @@ def clean_output_file(output_filename: str) -> None:
         "*/\n\n",
     ]
 
-    new_lines = banner_comment_lines + lines[:start] + lines[(end + 1) :]
+    try:
+        new_lines = banner_comment_lines + lines[:start] + lines[(end + 1) :]
+    except TypeError as err:
+        raise TypeError(f"{err}: output_filename: {output_filename}; {lines}")
 
     with open(output_filename, "w") as f:
         f.writelines(new_lines)
 
 
-def clean_schema(schema: Dict[str, Any]) -> None:
+def clean_schema(schema: Dict[str, Any], to_camel: bool) -> None:
     """
     Clean up the resulting JSON schemas by:
 
@@ -134,14 +138,25 @@ def clean_schema(schema: Dict[str, Any]) -> None:
     2) Getting rid of the useless "An enumeration." description applied to Enums
        which don't have a docstring.
     """
-    for prop in schema.get("properties", {}).values():
-        prop.pop("title", None)
+    update_props = {}
+    for name, value in schema.get("properties", {}).items():
+        value.pop("title", None)
+        if to_camel and ("_" in name):
+            name = "".join(
+                [
+                    word.capitalize() if i != 0 else word
+                    for i, word in enumerate(name.split("_"))
+                ]
+            )
+        update_props[name] = value
+
+    schema["properties"] = update_props
 
     if "enum" in schema and schema.get("description") == "An enumeration.":
         del schema["description"]
 
 
-def generate_json_schema(models: List[Type[BaseModel]]) -> str:
+def generate_json_schema(models: List[Type[BaseModel]], to_camel: bool) -> str:
     """
     Create a top-level '_Master_' model with references to each of the actual models.
     Generate the schema for this model, which will include the schemas for all the
@@ -168,7 +183,7 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
         schema = json.loads(master_model.schema_json())
 
         for d in schema.get("definitions", {}).values():
-            clean_schema(d)
+            clean_schema(d, to_camel)
 
         return json.dumps(schema, indent=2)
 
@@ -179,7 +194,11 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
 
 
 def generate_typescript_defs(
-    module: str, output: str, exclude: Tuple[str] = (), json2ts_cmd: str = "json2ts"
+    module: str,
+    output: str,
+    exclude: Tuple[str] = (),
+    to_camel: bool = False,
+    json2ts_cmd: str = "json2ts",
 ) -> None:
     """
     Convert the pydantic models in a python module into typescript interfaces.
@@ -205,7 +224,7 @@ def generate_typescript_defs(
 
     logger.info("Generating JSON schema from pydantic models...")
 
-    schema = generate_json_schema(models)
+    schema = generate_json_schema(models, to_camel)
     schema_dir = mkdtemp()
     schema_file_path = os.path.join(schema_dir, "schema.json")
 
@@ -253,6 +272,11 @@ def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
         default=[],
         help="name of a pydantic model which should be omitted from the results.\n"
         "This option can be defined multiple times.",
+    )
+    parser.add_argument(
+        "--to-camel",
+        action="store_true",
+        help="flag to convert model field names from snake_case to CamelCase.",
     )
     parser.add_argument(
         "--json2ts-cmd",
