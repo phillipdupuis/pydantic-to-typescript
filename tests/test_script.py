@@ -49,6 +49,10 @@ def test_single_module(tmpdir):
     run_test(tmpdir, "single_module")
 
 
+def test_single_module_to_camel(tmpdir):
+    run_test(tmpdir, "single_module_to_camel")
+
+
 @pytest.mark.skipif(
     sys.version_info < (3, 8),
     reason="Literal requires python 3.8 or higher (Ref.: PEP 586)",
