@@ -170,8 +170,6 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
         for d in schema.get("$defs", {}).values():
             clean_schema(d)
 
-        print(json.dumps(schema, indent=2))
-
         return json.dumps(schema, indent=2)
 
     finally:
