@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import Generic, TypeVar, Optional, List, Type, cast, Union
 
 from pydantic import BaseModel
-from pydantic.generics import GenericModel
 
 T = TypeVar("T")
 
@@ -12,7 +11,7 @@ class Error(BaseModel):
     message: str
 
 
-class ApiResponse(GenericModel, Generic[T]):
+class ApiResponse(BaseModel, Generic[T]):
     data: Optional[T]
     error: Optional[Error]
 
