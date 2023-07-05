@@ -25,7 +25,7 @@ install_requires = [
 
 setup(
     name="pydantic-to-typescript",
-    version="1.0.10",
+    version="2.0.0",
     description="Convert pydantic models to typescript interfaces",
     license="MIT",
     long_description=readme(),
