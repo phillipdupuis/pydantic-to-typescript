@@ -175,7 +175,7 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
     finally:
         for m, x in zip(models, model_extras):
             if x is not None:
-                m.model_config.extra = x
+                m.model_config["extra"] = x
 
 
 def generate_typescript_defs(
