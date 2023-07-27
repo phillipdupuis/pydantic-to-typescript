@@ -1,11 +1,14 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 from pydantic2ts import generate_typescript_defs
-from pydantic2ts.cli.script import parse_cli_args
+from pydantic2ts.cli.script import DEBUG, V2, parse_cli_args
+
+version = "v2" if V2 else "v1"
 
 
 def _results_directory() -> str:
@@ -13,11 +16,11 @@ def _results_directory() -> str:
 
 
 def get_input_module(test_name: str) -> str:
-    return os.path.join(_results_directory(), test_name, "input.py")
+    return os.path.join(_results_directory(), test_name, version, "input.py")
 
 
 def get_expected_output(test_name: str) -> str:
-    path = os.path.join(_results_directory(), test_name, "output.ts")
+    path = os.path.join(_results_directory(), test_name, version, "output.ts")
     with open(path, "r") as f:
         return f.read()
 
@@ -42,6 +45,11 @@ def run_test(
 
     with open(output_path, "r") as f:
         output = f.read()
+
+    if DEBUG:
+        out_dir = Path(module_path).parent
+        output_path = out_dir / "output_debug.ts"
+
     assert output == get_expected_output(test_name)
 
 
@@ -77,7 +85,7 @@ def test_excluding_models(tmpdir):
 def test_relative_filepath(tmpdir):
     test_name = "single_module"
     relative_path = os.path.join(
-        ".", "tests", "expected_results", test_name, "input.py"
+        ".", "tests", "expected_results", test_name, version, "input.py"
     )
     run_test(
         tmpdir,
@@ -135,7 +143,7 @@ def test_error_if_json2ts_not_installed(tmpdir):
 def test_error_if_invalid_module_path(tmpdir):
     with pytest.raises(ModuleNotFoundError):
         generate_typescript_defs(
-            "fake_module", tmpdir.join(f"fake_module_output.ts").strpath
+            "fake_module", tmpdir.join("fake_module_output.ts").strpath
         )
 
 
