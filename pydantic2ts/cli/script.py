@@ -7,19 +7,26 @@ import os
 import shutil
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from tempfile import mkdtemp
 from types import ModuleType
 from typing import Any, Dict, List, Tuple, Type
 from uuid import uuid4
 
-from pydantic import BaseModel, Extra, create_model
+from pydantic import VERSION, BaseModel, Extra, create_model
 
-try:
-    from pydantic.generics import GenericModel
-except ImportError:
-    GenericModel = None
+V2 = True if VERSION.startswith("2") else False
+
+if not V2:
+    try:
+        from pydantic.generics import GenericModel
+    except ImportError:
+        GenericModel = None
 
 logger = logging.getLogger("pydantic2ts")
+
+
+DEBUG = os.environ.get("DEBUG", False)
 
 
 def import_module(path: str) -> ModuleType:
@@ -61,12 +68,15 @@ def is_concrete_pydantic_model(obj) -> bool:
     Return true if an object is a concrete subclass of pydantic's BaseModel.
     'concrete' meaning that it's not a GenericModel.
     """
+    generic_metadata = getattr(obj, "__pydantic_generic_metadata__", None)
     if not inspect.isclass(obj):
         return False
     elif obj is BaseModel:
         return False
-    elif GenericModel and issubclass(obj, GenericModel):
+    elif not V2 and GenericModel and issubclass(obj, GenericModel):
         return bool(obj.__concrete__)
+    elif V2 and generic_metadata:
+        return not bool(generic_metadata["parameters"])
     else:
         return issubclass(obj, BaseModel)
 
@@ -141,7 +151,7 @@ def clean_schema(schema: Dict[str, Any]) -> None:
         del schema["description"]
 
 
-def generate_json_schema(models: List[Type[BaseModel]]) -> str:
+def generate_json_schema_v1(models: List[Type[BaseModel]]) -> str:
     """
     Create a top-level '_Master_' model with references to each of the actual models.
     Generate the schema for this model, which will include the schemas for all the
@@ -178,6 +188,43 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
                 m.Config.extra = x
 
 
+def generate_json_schema_v2(models: List[Type[BaseModel]]) -> str:
+    """
+    Create a top-level '_Master_' model with references to each of the actual models.
+    Generate the schema for this model, which will include the schemas for all the
+    nested models. Then clean up the schema.
+
+    One weird thing we do is we temporarily override the 'extra' setting in models,
+    changing it to 'forbid' UNLESS it was explicitly set to 'allow'. This prevents
+    '[k: string]: any' from being added to every interface. This change is reverted
+    once the schema has been generated.
+    """
+    model_extras = [m.model_config.get("extra") for m in models]
+
+    try:
+        for m in models:
+            if m.model_config.get("extra") != "allow":
+                m.model_config["extra"] = "forbid"
+
+        master_model: BaseModel = create_model(
+            "_Master_", **{m.__name__: (m, ...) for m in models}
+        )
+        master_model.model_config["extra"] = "forbid"
+        master_model.model_config["json_schema_extra"] = staticmethod(clean_schema)
+
+        schema: dict = master_model.model_json_schema(mode="serialization")
+
+        for d in schema.get("$defs", {}).values():
+            clean_schema(d)
+
+        return json.dumps(schema, indent=2)
+
+    finally:
+        for m, x in zip(models, model_extras):
+            if x is not None:
+                m.model_config["extra"] = x
+
+
 def generate_typescript_defs(
     module: str, output: str, exclude: Tuple[str] = (), json2ts_cmd: str = "json2ts"
 ) -> None:
@@ -205,12 +252,19 @@ def generate_typescript_defs(
 
     logger.info("Generating JSON schema from pydantic models...")
 
-    schema = generate_json_schema(models)
+    schema = generate_json_schema_v2(models) if V2 else generate_json_schema_v1(models)
+
     schema_dir = mkdtemp()
     schema_file_path = os.path.join(schema_dir, "schema.json")
 
     with open(schema_file_path, "w") as f:
         f.write(schema)
+
+    if DEBUG:
+        debug_schema_file_path = Path(module).parent / "schema_debug.json"
+        # raise ValueError(module)
+        with open(debug_schema_file_path, "w") as f:
+            f.write(schema)
 
     logger.info("Converting JSON schema to typescript definitions...")
 

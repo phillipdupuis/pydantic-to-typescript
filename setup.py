@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 
 def readme():
@@ -25,7 +25,7 @@ install_requires = [
 
 setup(
     name="pydantic-to-typescript",
-    version="1.0.10",
+    version="1.1.11",
     description="Convert pydantic models to typescript interfaces",
     license="MIT",
     long_description=readme(),
