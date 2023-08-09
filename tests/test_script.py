@@ -41,7 +41,7 @@ def run_test(
         cmd = f"pydantic2ts --module {module_path} --output {output_path}"
         for model_to_exclude in exclude:
             cmd += f" --exclude {model_to_exclude}"
-        subprocess.run(cmd, shell=True)
+        subprocess.run(cmd, shell=True, check=True)
 
     with open(output_path, "r") as f:
         output = f.read()
@@ -80,6 +80,12 @@ def test_excluding_models(tmpdir):
     run_test(
         tmpdir, "excluding_models", exclude=("LoginCredentials", "LoginResponseData")
     )
+
+
+def test_computed_fields(tmpdir):
+    if version == "v1":
+        pytest.skip("Computed fields are a pydantic v2 feature")
+    run_test(tmpdir, "computed_fields")
 
 
 def test_relative_filepath(tmpdir):

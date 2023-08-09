@@ -15,17 +15,18 @@ from uuid import uuid4
 
 from pydantic import VERSION, BaseModel, Extra, create_model
 
-try:
-    from pydantic.generics import GenericModel
-except ImportError:
-    GenericModel = None
+V2 = True if VERSION.startswith("2") else False
+
+if not V2:
+    try:
+        from pydantic.generics import GenericModel
+    except ImportError:
+        GenericModel = None
 
 logger = logging.getLogger("pydantic2ts")
 
 
 DEBUG = os.environ.get("DEBUG", False)
-
-V2 = True if VERSION.startswith("2") else False
 
 
 def import_module(path: str) -> ModuleType:
@@ -202,16 +203,16 @@ def generate_json_schema_v2(models: List[Type[BaseModel]]) -> str:
 
     try:
         for m in models:
-            if m.model_config.get("extra") != Extra.allow:
-                m.model_config["extra"] = Extra.forbid
+            if m.model_config.get("extra") != "allow":
+                m.model_config["extra"] = "forbid"
 
         master_model: BaseModel = create_model(
             "_Master_", **{m.__name__: (m, ...) for m in models}
         )
-        master_model.model_config["extra"] = Extra.forbid
+        master_model.model_config["extra"] = "forbid"
         master_model.model_config["json_schema_extra"] = staticmethod(clean_schema)
 
-        schema: dict = master_model.model_json_schema()
+        schema: dict = master_model.model_json_schema(mode="serialization")
 
         for d in schema.get("$defs", {}).values():
             clean_schema(d)
@@ -260,7 +261,9 @@ def generate_typescript_defs(
         f.write(schema)
 
     if DEBUG:
-        with open(Path(output).parent / "schema.json", "w") as f:
+        debug_schema_file_path = Path(module).parent / "schema_debug.json"
+        # raise ValueError(module)
+        with open(debug_schema_file_path, "w") as f:
             f.write(schema)
 
     logger.info("Converting JSON schema to typescript definitions...")

@@ -147,3 +147,4 @@ cython_debug/
 
 # test outputs
 output_debug.ts
+schema_debug.json
