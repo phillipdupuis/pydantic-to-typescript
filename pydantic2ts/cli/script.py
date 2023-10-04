@@ -14,10 +14,6 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Extra, create_model
 
-try:
-    from pydantic.generics import GenericModel
-except ImportError:
-    GenericModel = None
 
 logger = logging.getLogger("pydantic2ts")
 
@@ -65,8 +61,9 @@ def is_concrete_pydantic_model(obj) -> bool:
         return False
     elif obj is BaseModel:
         return False
-    elif GenericModel and issubclass(obj, GenericModel):
-        return bool(obj.__concrete__)
+    # Generic model was removed
+    # elif GenericModel and issubclass(obj, GenericModel):
+    #     return bool(obj.__concrete__)
     else:
         return issubclass(obj, BaseModel)
 
@@ -137,6 +134,11 @@ def clean_schema(schema: Dict[str, Any]) -> None:
     for prop in schema.get("properties", {}).values():
         prop.pop("title", None)
 
+        # Work around to produce Tuples just like Arrays since json2ts doesn't support the
+        # prefixItems json openAPI spec
+        if "prefixItems" in prop:
+            prop["items"] = prop["prefixItems"]
+
     if "enum" in schema and schema.get("description") == "An enumeration.":
         del schema["description"]
 
@@ -152,22 +154,24 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
     '[k: string]: any' from being added to every interface. This change is reverted
     once the schema has been generated.
     """
-    model_extras = [getattr(m.Config, "extra", None) for m in models]
+    model_extras = [m.model_config.get("extra", None) for m in models]
 
     try:
         for m in models:
-            if getattr(m.Config, "extra", None) != Extra.allow:
-                m.Config.extra = Extra.forbid
+            if m.model_config.get("extra", None) != "allow":
+                m.model_config["extra"] = "forbid"
 
         master_model = create_model(
             "_Master_", **{m.__name__: (m, ...) for m in models}
         )
-        master_model.Config.extra = Extra.forbid
-        master_model.Config.schema_extra = staticmethod(clean_schema)
+        master_model.model_config["extra"] = "forbid"
+        master_model.model_config["json_schema_extra"] = staticmethod(clean_schema)
 
-        schema = json.loads(master_model.schema_json())
+        schema = master_model.model_json_schema()
 
-        for d in schema.get("definitions", {}).values():
+        # prefixItems
+
+        for d in schema.get("$defs", {}).values():
             clean_schema(d)
 
         return json.dumps(schema, indent=2)
@@ -175,7 +179,7 @@ def generate_json_schema(models: List[Type[BaseModel]]) -> str:
     finally:
         for m, x in zip(models, model_extras):
             if x is not None:
-                m.Config.extra = x
+                m.model_config["extra"] = x
 
 
 def generate_typescript_defs(
@@ -281,3 +285,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
