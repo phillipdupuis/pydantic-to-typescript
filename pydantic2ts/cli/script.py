@@ -14,10 +14,6 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Extra, create_model
 
-try:
-    from pydantic.generics import GenericModel
-except ImportError:
-    GenericModel = None
 
 logger = logging.getLogger("pydantic2ts")
 
@@ -65,8 +61,9 @@ def is_concrete_pydantic_model(obj) -> bool:
         return False
     elif obj is BaseModel:
         return False
-    elif GenericModel and issubclass(obj, GenericModel):
-        return bool(obj.__concrete__)
+    # Generic model was removed
+    # elif GenericModel and issubclass(obj, GenericModel):
+    #     return bool(obj.__concrete__)
     else:
         return issubclass(obj, BaseModel)
 
