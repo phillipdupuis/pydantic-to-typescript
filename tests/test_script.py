@@ -4,11 +4,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from pydantic import VERSION as PYDANTIC_VERSION
 
 from pydantic2ts import generate_typescript_defs
-from pydantic2ts.cli.script import DEBUG, V2, parse_cli_args
+from pydantic2ts.cli.script import parse_cli_args
 
-version = "v2" if V2 else "v1"
+version = "v2" if PYDANTIC_VERSION.startswith("2") else "v1"
 
 
 def _results_directory() -> str:
@@ -46,9 +47,9 @@ def run_test(
     with open(output_path, "r") as f:
         output = f.read()
 
-    if DEBUG:
-        out_dir = Path(module_path).parent
-        output_path = out_dir / "output_debug.ts"
+    # if DEBUG:
+    #     out_dir = Path(module_path).parent
+    #     output_path = out_dir / "output_debug.ts"
 
     assert output == get_expected_output(test_name)
 
@@ -87,6 +88,7 @@ def test_computed_fields(tmpdir):
         pytest.skip("Computed fields are a pydantic v2 feature")
     run_test(tmpdir, "computed_fields")
 
+
 def test_extra_fields(tmpdir):
     run_test(tmpdir, "extra_fields")
 
@@ -119,7 +121,7 @@ def test_calling_from_python(tmpdir):
 
 def test_error_if_json2ts_not_installed(tmpdir):
     module_path = get_input_module("single_module")
-    output_path = tmpdir.join(f"cli_single_module.ts").strpath
+    output_path = tmpdir.join("cli_single_module.ts").strpath
 
     # If the json2ts command has no spaces and the executable cannot be found,
     # that means the user either hasn't installed json-schema-to-typescript or they made a typo.

@@ -10,26 +10,50 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from tempfile import mkdtemp
 from types import ModuleType
-from typing import Any, Dict, List, Tuple, Type
+from typing import Any, Dict, List, Tuple, Type, TypeVar, Union
 from uuid import uuid4
 
-from pydantic import VERSION, BaseModel, Extra, create_model
+try:
+    from pydantic.v1 import (
+        BaseModel as BaseModelV1,
+        Extra as ExtraV1,
+        create_model as create_model_v1,
+    )
+    from pydantic import BaseModel as BaseModelV2, create_model as create_model_v2
 
-V2 = True if VERSION.startswith("2") else False
+    BaseModelType = TypeVar("BaseModelType", Type[BaseModelV1], Type[BaseModelV2])
+except ImportError:
+    from pydantic import (
+        BaseModel as BaseModelV1,
+        Extra as ExtraV1,
+        create_model as create_model_v1,
+    )
 
-if not V2:
+    BaseModelV2 = None
+    create_model_v2 = None
+    BaseModelType = TypeVar("BaseModelType", Type[BaseModelV1])
+
+try:
+    from pydantic.v1.generics import GenericModel
+except ImportError:
     try:
         from pydantic.generics import GenericModel
     except ImportError:
         GenericModel = None
 
+
+# V2 = VERSION.startswith("2")
+
+# if not V2:
+#     try:
+#         from pydantic.generics import GenericModel
+#     except ImportError:
+#         GenericModel = None
+
 logger = logging.getLogger("pydantic2ts")
 
 
-DEBUG = os.environ.get("DEBUG", False)
-
-
-def import_module(path: str) -> ModuleType:
+def _import_module(path: str) -> ModuleType:
     """
     Helper which allows modules to be specified by either dotted path notation or by filepath.
 
@@ -38,7 +62,7 @@ def import_module(path: str) -> ModuleType:
     definition exist in sys.modules under that name.
     """
     try:
-        if os.path.exists(path):
+        if Path(path).exists():
             name = uuid4().hex
             spec = spec_from_file_location(name, path, submodule_search_locations=[])
             module = module_from_spec(spec)
@@ -54,7 +78,7 @@ def import_module(path: str) -> ModuleType:
         raise e
 
 
-def is_submodule(obj, module_name: str) -> bool:
+def _is_submodule(obj, module_name: str) -> bool:
     """
     Return true if an object is a submodule
     """
@@ -63,43 +87,54 @@ def is_submodule(obj, module_name: str) -> bool:
     )
 
 
-def is_concrete_pydantic_model(obj) -> bool:
+def _is_pydantic_v1_model(obj: Any) -> bool:
+    """
+    Return true if an object is a pydantic V1 model.
+    """
+    return inspect.isclass(obj) and (
+        (obj is not BaseModelV1 and issubclass(obj, BaseModelV1))
+        or (GenericModel and issubclass(obj, GenericModel) and obj.__concrete__)
+    )
+
+
+def _is_pydantic_v2_model(obj: Any) -> bool:
+    """
+    Return true if an object is a pydantic V2 model.
+    """
+    return inspect.isclass(obj) and (
+        obj is not BaseModelV2
+        and issubclass(obj, BaseModelV2)
+        and not getattr(obj, "__pydantic_generic_metadata__", {}).get("parameters")
+    )
+
+
+def _is_concrete_pydantic_model(obj: Any) -> bool:
     """
     Return true if an object is a concrete subclass of pydantic's BaseModel.
-    'concrete' meaning that it's not a GenericModel.
+    'concrete' meaning that it's not a generic model.
     """
-    generic_metadata = getattr(obj, "__pydantic_generic_metadata__", None)
-    if not inspect.isclass(obj):
-        return False
-    elif obj is BaseModel:
-        return False
-    elif not V2 and GenericModel and issubclass(obj, GenericModel):
-        return bool(obj.__concrete__)
-    elif V2 and generic_metadata:
-        return not bool(generic_metadata["parameters"])
-    else:
-        return issubclass(obj, BaseModel)
+    return _is_pydantic_v1_model(obj) or _is_pydantic_v2_model(obj)
 
 
-def extract_pydantic_models(module: ModuleType) -> List[Type[BaseModel]]:
+def _extract_pydantic_models(module: ModuleType) -> List[BaseModelType]:
     """
     Given a module, return a list of the pydantic models contained within it.
     """
     models = []
     module_name = module.__name__
 
-    for _, model in inspect.getmembers(module, is_concrete_pydantic_model):
+    for _, model in inspect.getmembers(module, _is_concrete_pydantic_model):
         models.append(model)
 
     for _, submodule in inspect.getmembers(
-        module, lambda obj: is_submodule(obj, module_name)
+        module, lambda obj: _is_submodule(obj, module_name)
     ):
-        models.extend(extract_pydantic_models(submodule))
+        models.extend(_extract_pydantic_models(submodule))
 
     return models
 
 
-def clean_output_file(output_filename: str) -> None:
+def _clean_output_file(output_filename: str) -> None:
     """
     Clean up the output file typescript definitions were written to by:
     1. Removing the 'master model'.
@@ -134,7 +169,7 @@ def clean_output_file(output_filename: str) -> None:
         f.writelines(new_lines)
 
 
-def clean_schema(schema: Dict[str, Any]) -> None:
+def _clean_schema(schema: Dict[str, Any]) -> None:
     """
     Clean up the resulting JSON schemas by:
 
@@ -151,7 +186,7 @@ def clean_schema(schema: Dict[str, Any]) -> None:
         del schema["description"]
 
 
-def generate_json_schema_v1(models: List[Type[BaseModel]]) -> str:
+def _generate_json_schema_v1(models: List[Type[BaseModelV1]]) -> str:
     """
     Create a top-level '_Master_' model with references to each of the actual models.
     Generate the schema for this model, which will include the schemas for all the
@@ -166,19 +201,19 @@ def generate_json_schema_v1(models: List[Type[BaseModel]]) -> str:
 
     try:
         for m in models:
-            if getattr(m.Config, "extra", None) != Extra.allow:
-                m.Config.extra = Extra.forbid
+            if getattr(m.Config, "extra", None) != ExtraV1.allow:
+                m.Config.extra = ExtraV1.forbid
 
-        master_model = create_model(
+        master_model = create_model_v1(
             "_Master_", **{m.__name__: (m, ...) for m in models}
         )
-        master_model.Config.extra = Extra.forbid
-        master_model.Config.schema_extra = staticmethod(clean_schema)
+        master_model.Config.extra = ExtraV1.forbid
+        master_model.Config.schema_extra = staticmethod(_clean_schema)
 
         schema = json.loads(master_model.schema_json())
 
         for d in schema.get("definitions", {}).values():
-            clean_schema(d)
+            _clean_schema(d)
 
         return json.dumps(schema, indent=2)
 
@@ -188,7 +223,7 @@ def generate_json_schema_v1(models: List[Type[BaseModel]]) -> str:
                 m.Config.extra = x
 
 
-def generate_json_schema_v2(models: List[Type[BaseModel]]) -> str:
+def _generate_json_schema_v2(models: List[Type[BaseModelV2]]) -> str:
     """
     Create a top-level '_Master_' model with references to each of the actual models.
     Generate the schema for this model, which will include the schemas for all the
@@ -206,16 +241,16 @@ def generate_json_schema_v2(models: List[Type[BaseModel]]) -> str:
             if m.model_config.get("extra") != "allow":
                 m.model_config["extra"] = "forbid"
 
-        master_model: BaseModel = create_model(
+        master_model = create_model_v2(
             "_Master_", **{m.__name__: (m, ...) for m in models}
         )
         master_model.model_config["extra"] = "forbid"
-        master_model.model_config["json_schema_extra"] = staticmethod(clean_schema)
+        master_model.model_config["json_schema_extra"] = staticmethod(_clean_schema)
 
         schema: dict = master_model.model_json_schema(mode="serialization")
 
         for d in schema.get("$defs", {}).values():
-            clean_schema(d)
+            _clean_schema(d)
 
         return json.dumps(schema, indent=2)
 
@@ -245,26 +280,28 @@ def generate_typescript_defs(
 
     logger.info("Finding pydantic models...")
 
-    models = extract_pydantic_models(import_module(module))
+    models = _extract_pydantic_models(_import_module(module))
 
     if exclude:
         models = [m for m in models if m.__name__ not in exclude]
 
+    if not models:
+        logger.info("No pydantic models found, exiting.")
+        return
+
     logger.info("Generating JSON schema from pydantic models...")
 
-    schema = generate_json_schema_v2(models) if V2 else generate_json_schema_v1(models)
+    schema = (
+        _generate_json_schema_v1(models)
+        if any(issubclass(m, BaseModelV1) for m in models)
+        else _generate_json_schema_v2(models)
+    )
 
     schema_dir = mkdtemp()
     schema_file_path = os.path.join(schema_dir, "schema.json")
 
     with open(schema_file_path, "w") as f:
         f.write(schema)
-
-    if DEBUG:
-        debug_schema_file_path = Path(module).parent / "schema_debug.json"
-        # raise ValueError(module)
-        with open(debug_schema_file_path, "w") as f:
-            f.write(schema)
 
     logger.info("Converting JSON schema to typescript definitions...")
 
@@ -275,7 +312,7 @@ def generate_typescript_defs(
     shutil.rmtree(schema_dir)
 
     if json2ts_exit_code == 0:
-        clean_output_file(output)
+        _clean_output_file(output)
         logger.info(f"Saved typescript definitions to {output}.")
     else:
         raise RuntimeError(
