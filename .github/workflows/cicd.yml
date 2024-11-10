@@ -59,6 +59,12 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path-to-lcov: coverage.lcov
+      - name: Install pydantic<2
+        run: |
+          python -m pip install 'pydantic<2'
+      - name: Run tests against pydantic<2
+        run: |
+          python -m pytest
   deploy:
     name: Deploy to PyPi
     runs-on: ubuntu-latest
