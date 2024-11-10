@@ -207,23 +207,15 @@ def generate_typescript_defs(
 
     logger.info("Generating JSON schema from pydantic models...")
 
-    schema = _generate_json_schema(models)
     schema_dir = Path(mkdtemp())
-    schema_file_path = schema_dir.joinpath("schema.json")
-    schema_file_path.write_text(schema)
+    schema_file = schema_dir.joinpath("schema.json")
+    schema_file.write_text(_generate_json_schema(models))
 
     logger.info("Converting JSON schema to typescript definitions...")
 
     json2ts_result = subprocess.run(
-        [
-            *shlex.split(json2ts_cmd),
-            "-i",
-            schema_file_path,
-            "-o",
-            output,
-            "--banner-comment",
-            "",
-        ]
+        f'{json2ts_cmd} -i {str(schema_file)} -o {output} --bannerComment ""',
+        shell=True,
     )
 
     shutil.rmtree(schema_dir)
@@ -243,7 +235,7 @@ def _parse_cli_args(args: List[str] = None) -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         prog="pydantic2ts",
-        description=_main.__doc__,
+        description=main.__doc__,
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
@@ -273,7 +265,7 @@ def _parse_cli_args(args: List[str] = None) -> argparse.Namespace:
     return parser.parse_args(args)
 
 
-def _main() -> None:
+def main() -> None:
     """
     CLI entrypoint to run :func:`generate_typescript_defs`
     """
@@ -288,4 +280,4 @@ def _main() -> None:
 
 
 if __name__ == "__main__":
-    _main()
+    main()
