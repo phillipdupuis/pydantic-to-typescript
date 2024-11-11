@@ -12,11 +12,12 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.6",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 install_requires = [
@@ -25,7 +26,7 @@ install_requires = [
 
 setup(
     name="pydantic-to-typescript",
-    version="1.1.11",
+    version="2.0.0",
     description="Convert pydantic models to typescript interfaces",
     license="MIT",
     long_description=readme(),
