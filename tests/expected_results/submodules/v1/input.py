@@ -1,6 +1,9 @@
 from typing import List
 
-from pydantic import BaseModel
+try:
+    from pydantic.v1 import BaseModel
+except ImportError:
+    from pydantic import BaseModel
 
 from .animals.cats import Cat
 from .animals.dogs import Dog

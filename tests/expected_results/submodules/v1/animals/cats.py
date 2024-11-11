@@ -1,6 +1,9 @@
-from pydantic import BaseModel
-from typing import Optional, Literal
 from enum import Enum
+
+try:
+    from pydantic.v1 import BaseModel
+except ImportError:
+    from pydantic import BaseModel
 
 
 class CatBreed(str, Enum):

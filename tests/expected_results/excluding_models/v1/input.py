@@ -1,5 +1,9 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from typing import List, Optional
+
+try:
+    from pydantic.v1 import BaseModel
+except ImportError:
+    from pydantic import BaseModel
 
 
 class LoginCredentials(BaseModel):

@@ -4,21 +4,25 @@ from itertools import product
 from pathlib import Path
 
 import pytest
-from pydantic import VERSION as _PYDANTIC_VERSION
 
 from pydantic2ts import generate_typescript_defs
 from pydantic2ts.cli.script import parse_cli_args
 
-_PYDANTIC_VERSIONS = (
-    ("v1",) if int(_PYDANTIC_VERSION.split(".")[0]) < 2 else ("v1", "v2")
-)
+try:
+    from pydantic import BaseModel
+    from pydantic.v1 import BaseModel as BaseModelV1
+
+    assert BaseModel is not BaseModelV1
+    _PYDANTIC_VERSIONS = ("v1", "v2")
+except (ImportError, AttributeError):
+    _PYDANTIC_VERSIONS = ("v1",)
 
 _RESULTS_DIRECTORY = Path(
     os.path.join(os.path.dirname(os.path.realpath(__file__)), "expected_results")
 )
 
 
-def _get_input_module(test_name: str, pydantic_version: str) -> str:
+def _get_input_module(test_name: str, pydantic_version: str) -> Path:
     return _RESULTS_DIRECTORY / test_name / pydantic_version / "input.py"
 
 
@@ -50,9 +54,7 @@ def _run_test(
             cmd += f" --exclude {model_to_exclude}"
         subprocess.run(cmd, shell=True, check=True)
 
-    assert Path(output_path).read_text() == _get_expected_output(
-        test_name, pydantic_version
-    )
+    assert Path(output_path).read_text() == _get_expected_output(test_name, pydantic_version)
 
 
 @pytest.mark.parametrize(
@@ -60,9 +62,7 @@ def _run_test(
     product(_PYDANTIC_VERSIONS, [False, True]),
 )
 def test_single_module(tmpdir, pydantic_version, call_from_python):
-    _run_test(
-        tmpdir, "single_module", pydantic_version, call_from_python=call_from_python
-    )
+    _run_test(tmpdir, "single_module", pydantic_version, call_from_python=call_from_python)
 
 
 @pytest.mark.parametrize(
@@ -102,9 +102,7 @@ def test_excluding_models(tmpdir, pydantic_version, call_from_python):
 def test_computed_fields(tmpdir, pydantic_version, call_from_python):
     if pydantic_version == "v1":
         pytest.skip("Computed fields are a pydantic v2 feature")
-    _run_test(
-        tmpdir, "computed_fields", pydantic_version, call_from_python=call_from_python
-    )
+    _run_test(tmpdir, "computed_fields", pydantic_version, call_from_python=call_from_python)
 
 
 @pytest.mark.parametrize(
@@ -112,21 +110,14 @@ def test_computed_fields(tmpdir, pydantic_version, call_from_python):
     product(_PYDANTIC_VERSIONS, [False, True]),
 )
 def test_extra_fields(tmpdir, pydantic_version, call_from_python):
-    _run_test(
-        tmpdir, "extra_fields", pydantic_version, call_from_python=call_from_python
-    )
+    _run_test(tmpdir, "extra_fields", pydantic_version, call_from_python=call_from_python)
 
 
 def test_relative_filepath(tmpdir):
     test_name = "single_module"
     pydantic_version = _PYDANTIC_VERSIONS[0]
     relative_path = (
-        Path(".")
-        / "tests"
-        / "expected_results"
-        / test_name
-        / pydantic_version
-        / "input.py"
+        Path(".") / "tests" / "expected_results" / test_name / pydantic_version / "input.py"
     )
     _run_test(
         tmpdir,
@@ -170,9 +161,7 @@ def test_error_if_json2ts_not_installed(tmpdir):
 
 def test_error_if_invalid_module_path(tmpdir):
     with pytest.raises(ModuleNotFoundError):
-        generate_typescript_defs(
-            "fake_module", tmpdir.join("fake_module_output.ts").strpath
-        )
+        generate_typescript_defs("fake_module", tmpdir.join("fake_module_output.ts").strpath)
 
 
 def test_parse_cli_args():

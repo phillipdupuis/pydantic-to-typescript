@@ -1,8 +1,12 @@
 from datetime import datetime
-from typing import Generic, List, Optional, Type, TypeVar, cast
+from typing import Generic, List, Optional, Type, TypeVar
 
-from pydantic import BaseModel
-from pydantic.generics import GenericModel
+try:
+    from pydantic.v1 import BaseModel
+    from pydantic.v1.generics import GenericModel
+except ImportError:
+    from pydantic import BaseModel
+    from pydantic.generics import GenericModel
 
 T = TypeVar("T")
 
@@ -26,7 +30,7 @@ def create_response_type(data_type: T, name: str) -> "Type[ApiResponse[T]]":
     t = ApiResponse[data_type]
     t.__name__ = name
     t.__qualname__ = name
-    return cast(Type[ApiResponse[T]], t)
+    return t
 
 
 class User(BaseModel):
