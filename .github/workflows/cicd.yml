@@ -11,28 +11,29 @@ jobs:
       - uses: psf/black@stable
   test:
     name: Run unit tests
-    needs: lint
+    # needs: lint
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
         python-version: ["3.8"]
-        include:
-          - os: ubuntu-latest
-            python-version: "3.6"
-          - os: ubuntu-latest
-            python-version: "3.7"
           - os: ubuntu-latest
             python-version: "3.9"
           - os: ubuntu-latest
             python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
-      - name: Set up Node.js 16
+      - name: Set up Node.js 20
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 20
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
