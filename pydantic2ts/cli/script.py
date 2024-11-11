@@ -10,22 +10,25 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from tempfile import mkdtemp
 from types import ModuleType
-from typing import Any, Dict, List, Tuple, Type, TypeVar, Union
+from typing import Any, Dict, List, Tuple, Type, TypeVar
 from uuid import uuid4
 
 try:
+    from pydantic import BaseModel as BaseModelV2
+    from pydantic import create_model as create_model_v2
     from pydantic.v1 import (
         BaseModel as BaseModelV1,
-        Extra as ExtraV1,
+    )
+    from pydantic.v1 import (
         create_model as create_model_v1,
     )
-    from pydantic import BaseModel as BaseModelV2, create_model as create_model_v2
 
     BaseModelType = TypeVar("BaseModelType", Type[BaseModelV1], Type[BaseModelV2])
 except ImportError:
     from pydantic import (
         BaseModel as BaseModelV1,
-        Extra as ExtraV1,
+    )
+    from pydantic import (
         create_model as create_model_v1,
     )
 
@@ -40,15 +43,6 @@ except ImportError:
         from pydantic.generics import GenericModel
     except ImportError:
         GenericModel = None
-
-
-# V2 = VERSION.startswith("2")
-
-# if not V2:
-#     try:
-#         from pydantic.generics import GenericModel
-#     except ImportError:
-#         GenericModel = None
 
 logger = logging.getLogger("pydantic2ts")
 
@@ -201,13 +195,13 @@ def _generate_json_schema_v1(models: List[Type[BaseModelV1]]) -> str:
 
     try:
         for m in models:
-            if getattr(m.Config, "extra", None) != ExtraV1.allow:
-                m.Config.extra = ExtraV1.forbid
+            if getattr(m.Config, "extra", None) != "allow":
+                m.Config.extra = "forbid"
 
         master_model = create_model_v1(
             "_Master_", **{m.__name__: (m, ...) for m in models}
         )
-        master_model.Config.extra = ExtraV1.forbid
+        master_model.Config.extra = "forbid"
         master_model.Config.schema_extra = staticmethod(_clean_schema)
 
         schema = json.loads(master_model.schema_json())

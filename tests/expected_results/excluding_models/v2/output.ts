@@ -7,6 +7,6 @@
 
 export interface Profile {
   username: string;
-  age: number | null;
+  age?: number | null;
   hobbies: string[];
 }

@@ -9,7 +9,7 @@ class LoginCredentials(BaseModel):
 
 class Profile(BaseModel):
     username: str
-    age: Optional[int]
+    age: Optional[int] = None
     hobbies: List[str]
 
 

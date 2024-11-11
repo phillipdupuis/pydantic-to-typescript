@@ -13,8 +13,8 @@ class Error(BaseModel):
 
 
 class ApiResponse(GenericModel, Generic[T]):
-    data: Optional[T]
-    error: Optional[Error]
+    data: Optional[T] = None
+    error: Optional[Error] = None
 
 
 def create_response_type(data_type: T, name: str) -> "Type[ApiResponse[T]]":
