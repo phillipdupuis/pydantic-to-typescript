@@ -6,34 +6,29 @@ import logging
 import os
 import shutil
 import sys
+from contextlib import contextmanager
 from importlib.util import module_from_spec, spec_from_file_location
-from pathlib import Path
 from tempfile import mkdtemp
 from types import ModuleType
 from typing import Any, Dict, List, Tuple, Type, TypeVar
 from uuid import uuid4
 
 try:
-    from pydantic import BaseModel as BaseModelV2
-    from pydantic import create_model as create_model_v2
+    from pydantic import BaseModel as BaseModelV2, create_model as create_model_v2
     from pydantic.v1 import (
         BaseModel as BaseModelV1,
-    )
-    from pydantic.v1 import (
         create_model as create_model_v1,
     )
 
     BaseModelType = TypeVar("BaseModelType", Type[BaseModelV1], Type[BaseModelV2])
 except ImportError:
+    BaseModelV2 = None
+    create_model_v2 = None
     from pydantic import (
         BaseModel as BaseModelV1,
-    )
-    from pydantic import (
         create_model as create_model_v1,
     )
 
-    BaseModelV2 = None
-    create_model_v2 = None
     BaseModelType = TypeVar("BaseModelType", Type[BaseModelV1])
 
 try:
@@ -56,7 +51,7 @@ def _import_module(path: str) -> ModuleType:
     definition exist in sys.modules under that name.
     """
     try:
-        if Path(path).exists():
+        if os.path.exists(path):
             name = uuid4().hex
             spec = spec_from_file_location(name, path, submodule_search_locations=[])
             module = module_from_spec(spec)
@@ -102,7 +97,7 @@ def _is_pydantic_v2_model(obj: Any) -> bool:
     )
 
 
-def _is_concrete_pydantic_model(obj: Any) -> bool:
+def _is_pydantic_model(obj: Any) -> bool:
     """
     Return true if an object is a concrete subclass of pydantic's BaseModel.
     'concrete' meaning that it's not a generic model.
@@ -117,7 +112,7 @@ def _extract_pydantic_models(module: ModuleType) -> List[BaseModelType]:
     models = []
     module_name = module.__name__
 
-    for _, model in inspect.getmembers(module, _is_concrete_pydantic_model):
+    for _, model in inspect.getmembers(module, _is_pydantic_model):
         models.append(model)
 
     for _, submodule in inspect.getmembers(
@@ -179,79 +174,70 @@ def _clean_schema(schema: Dict[str, Any]) -> None:
     if "enum" in schema and schema.get("description") == "An enumeration.":
         del schema["description"]
 
+    # TODO: add check for if it is truly pydantic v1. If so, fix nullable fields. Do the thing to add "null" to union.
+    # https://github.com/pydantic/pydantic/issues/1270#issuecomment-729555558
 
-def _generate_json_schema_v1(models: List[Type[BaseModelV1]]) -> str:
+
+def _generate_json_schema(models: List[BaseModelType]) -> str:
     """
     Create a top-level '_Master_' model with references to each of the actual models.
     Generate the schema for this model, which will include the schemas for all the
     nested models. Then clean up the schema.
-
-    One weird thing we do is we temporarily override the 'extra' setting in models,
-    changing it to 'forbid' UNLESS it was explicitly set to 'allow'. This prevents
-    '[k: string]: any' from being added to every interface. This change is reverted
-    once the schema has been generated.
     """
-    model_extras = [getattr(m.Config, "extra", None) for m in models]
+    with _forbid_extras(models):
+        v1 = any(issubclass(m, BaseModelV1) for m in models)
 
+        master_model = (create_model_v1 if v1 else create_model_v2)(
+            "_Master_", **{m.__name__: (m, ...) for m in models}
+        )
+
+        if v1:
+            master_model.Config.extra = "forbid"
+            master_model.Config.schema_extra = staticmethod(_clean_schema)
+        else:
+            master_model.model_config["extra"] = "forbid"
+            master_model.model_config["json_schema_extra"] = staticmethod(_clean_schema)
+
+        schema = (
+            json.loads(master_model.schema_json())
+            if v1
+            else master_model.model_json_schema(mode="serialization")
+        )
+
+        for d in schema.get("definitions" if v1 else "$defs", {}).values():
+            _clean_schema(d)
+
+        return json.dumps(schema, indent=2)
+
+
+@contextmanager
+def _forbid_extras(models: List[BaseModelType]) -> None:
+    """
+    Temporarily override the 'extra' setting in models,
+    changing it to 'forbid' UNLESS it was explicitly set to 'allow'.
+
+    This prevents '[k: string]: any' from being added to every interface.
+    This change is reverted once the schema has been generated.
+    """
+    v1 = any(issubclass(m, BaseModelV1) for m in models)
+    extras = [
+        getattr(m.Config, "extra", None) if v1 else m.model_config.get("extra")
+        for m in models
+    ]
     try:
         for m in models:
-            if getattr(m.Config, "extra", None) != "allow":
+            if v1:
                 m.Config.extra = "forbid"
-
-        master_model = create_model_v1(
-            "_Master_", **{m.__name__: (m, ...) for m in models}
-        )
-        master_model.Config.extra = "forbid"
-        master_model.Config.schema_extra = staticmethod(_clean_schema)
-
-        schema = json.loads(master_model.schema_json())
-
-        for d in schema.get("definitions", {}).values():
-            _clean_schema(d)
-
-        return json.dumps(schema, indent=2)
-
-    finally:
-        for m, x in zip(models, model_extras):
-            if x is not None:
-                m.Config.extra = x
-
-
-def _generate_json_schema_v2(models: List[Type[BaseModelV2]]) -> str:
-    """
-    Create a top-level '_Master_' model with references to each of the actual models.
-    Generate the schema for this model, which will include the schemas for all the
-    nested models. Then clean up the schema.
-
-    One weird thing we do is we temporarily override the 'extra' setting in models,
-    changing it to 'forbid' UNLESS it was explicitly set to 'allow'. This prevents
-    '[k: string]: any' from being added to every interface. This change is reverted
-    once the schema has been generated.
-    """
-    model_extras = [m.model_config.get("extra") for m in models]
-
-    try:
-        for m in models:
-            if m.model_config.get("extra") != "allow":
+            else:
                 m.model_config["extra"] = "forbid"
-
-        master_model = create_model_v2(
-            "_Master_", **{m.__name__: (m, ...) for m in models}
-        )
-        master_model.model_config["extra"] = "forbid"
-        master_model.model_config["json_schema_extra"] = staticmethod(_clean_schema)
-
-        schema: dict = master_model.model_json_schema(mode="serialization")
-
-        for d in schema.get("$defs", {}).values():
-            _clean_schema(d)
-
-        return json.dumps(schema, indent=2)
-
+        yield
     finally:
-        for m, x in zip(models, model_extras):
+        for m, x in zip(models, extras):
             if x is not None:
-                m.model_config["extra"] = x
+                if v1:
+                    m.Config.extra = x
+                else:
+                    m.model_config["extra"] = x
 
 
 def generate_typescript_defs(
@@ -277,7 +263,11 @@ def generate_typescript_defs(
     models = _extract_pydantic_models(_import_module(module))
 
     if exclude:
-        models = [m for m in models if m.__name__ not in exclude]
+        models = [
+            m
+            for m in models
+            if (m.__name__ not in exclude and m.__qualname__ not in exclude)
+        ]
 
     if not models:
         logger.info("No pydantic models found, exiting.")
@@ -285,12 +275,7 @@ def generate_typescript_defs(
 
     logger.info("Generating JSON schema from pydantic models...")
 
-    schema = (
-        _generate_json_schema_v1(models)
-        if any(issubclass(m, BaseModelV1) for m in models)
-        else _generate_json_schema_v2(models)
-    )
-
+    schema = _generate_json_schema(models)
     schema_dir = mkdtemp()
     schema_file_path = os.path.join(schema_dir, "schema.json")
 
