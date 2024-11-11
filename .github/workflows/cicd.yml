@@ -50,7 +50,7 @@ jobs:
           python -m pytest --cov=pydantic2ts --cov-append
       - name: Run tests using 'pydantic==1.*.*'
         run: |
-          python -m pip install 'pydantic==1.*.*'
+          python -m pip install 'pydantic<2'
           python -m pytest --cov=pydantic2ts --cov-append
       - name: Combine coverage data
         run: |
