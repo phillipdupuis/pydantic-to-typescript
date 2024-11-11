@@ -1,0 +1,10 @@
+line-length = 100
+indent-width = 4
+
+[format]
+quote-style = "double"
+
+[lint]
+select = ["E", "F", "I", "B", "W"]
+fixable = ["ALL"]
+
