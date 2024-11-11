@@ -6,40 +6,49 @@ import logging
 import os
 import shutil
 import sys
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from importlib.util import module_from_spec, spec_from_file_location
 from tempfile import mkdtemp
 from types import ModuleType
-from typing import Any, Dict, List, Tuple, Type, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+)
 from uuid import uuid4
 
 try:
-    from pydantic import BaseModel as BaseModelV2, create_model as create_model_v2
-    from pydantic.v1 import (
-        BaseModel as BaseModelV1,
-        create_model as create_model_v1,
-    )
-
-    BaseModelType = TypeVar("BaseModelType", Type[BaseModelV1], Type[BaseModelV2])
+    from pydantic import BaseModel as BaseModelV2
+    from pydantic import create_model as create_model_v2
+    from pydantic.v1 import BaseModel as BaseModelV1
+    from pydantic.v1 import create_model as create_model_v1
 except ImportError:
     BaseModelV2 = None
     create_model_v2 = None
-    from pydantic import (
-        BaseModel as BaseModelV1,
-        create_model as create_model_v1,
-    )
-
-    BaseModelType = TypeVar("BaseModelType", Type[BaseModelV1])
+    from pydantic import BaseModel as BaseModelV1
+    from pydantic import create_model as create_model_v1
 
 try:
-    from pydantic.v1.generics import GenericModel
+    from pydantic.v1.generics import GenericModel as GenericModelV1
 except ImportError:
     try:
-        from pydantic.generics import GenericModel
+        from pydantic.generics import GenericModel as GenericModelV1
     except ImportError:
-        GenericModel = None
+        GenericModelV1 = None
 
-logger = logging.getLogger("pydantic2ts")
+if TYPE_CHECKING:
+    from pydantic.config import ConfigDict
+    from pydantic.v1.config import BaseConfig
+    from pydantic.v1.fields import ModelField
+
+
+LOG = logging.getLogger("pydantic2ts")
 
 
 def _import_module(path: str) -> ModuleType:
@@ -54,26 +63,28 @@ def _import_module(path: str) -> ModuleType:
         if os.path.exists(path):
             name = uuid4().hex
             spec = spec_from_file_location(name, path, submodule_search_locations=[])
+            if spec is None:
+                raise ImportError(f"spec_from_file_location failed for {path}")
             module = module_from_spec(spec)
             sys.modules[name] = module
+            if spec.loader is None:
+                raise ImportError(f"loader is None for {path}")
             spec.loader.exec_module(module)
             return module
         else:
             return importlib.import_module(path)
     except Exception as e:
-        logger.error(
+        LOG.error(
             "The --module argument must be a module path separated by dots or a valid filepath"
         )
         raise e
 
 
-def _is_submodule(obj, module_name: str) -> bool:
+def _is_submodule(obj: Any, module_name: str) -> bool:
     """
     Return true if an object is a submodule
     """
-    return inspect.ismodule(obj) and getattr(obj, "__name__", "").startswith(
-        f"{module_name}."
-    )
+    return inspect.ismodule(obj) and getattr(obj, "__name__", "").startswith(f"{module_name}.")
 
 
 def _is_pydantic_v1_model(obj: Any) -> bool:
@@ -82,7 +93,11 @@ def _is_pydantic_v1_model(obj: Any) -> bool:
     """
     return inspect.isclass(obj) and (
         (obj is not BaseModelV1 and issubclass(obj, BaseModelV1))
-        or (GenericModel and issubclass(obj, GenericModel) and obj.__concrete__)
+        or (
+            GenericModelV1 is not None
+            and issubclass(obj, GenericModelV1)
+            and getattr(obj, "__concrete__", False)
+        )
     )
 
 
@@ -91,7 +106,8 @@ def _is_pydantic_v2_model(obj: Any) -> bool:
     Return true if an object is a pydantic V2 model.
     """
     return inspect.isclass(obj) and (
-        obj is not BaseModelV2
+        BaseModelV2 is not None
+        and obj is not BaseModelV2
         and issubclass(obj, BaseModelV2)
         and not getattr(obj, "__pydantic_generic_metadata__", {}).get("parameters")
     )
@@ -105,19 +121,36 @@ def _is_pydantic_model(obj: Any) -> bool:
     return _is_pydantic_v1_model(obj) or _is_pydantic_v2_model(obj)
 
 
-def _extract_pydantic_models(module: ModuleType) -> List[BaseModelType]:
+def _get_model_config(model: Type[Any]) -> "Union[ConfigDict, Type[BaseConfig]]":
+    """
+    Return the 'config' for a pydantic model.
+    In version 1 of pydantic, this is a class. In version 2, it's a dictionary.
+    """
+    if hasattr(model, "Config") and inspect.isclass(model.Config):
+        return model.Config  # type: ignore
+    return model.model_config
+
+
+def _get_model_json_schema(model: Type[Any]) -> Dict[str, Any]:
+    """
+    Generate the JSON schema for a pydantic model.
+    """
+    if _is_pydantic_v1_model(model):
+        return json.loads(model.schema_json())
+    return model.model_json_schema(mode="serialization")
+
+
+def _extract_pydantic_models(module: ModuleType) -> List[type]:
     """
     Given a module, return a list of the pydantic models contained within it.
     """
-    models = []
+    models: List[type] = []
     module_name = module.__name__
 
     for _, model in inspect.getmembers(module, _is_pydantic_model):
         models.append(model)
 
-    for _, submodule in inspect.getmembers(
-        module, lambda obj: _is_submodule(obj, module_name)
-    ):
+    for _, submodule in inspect.getmembers(module, lambda obj: _is_submodule(obj, module_name)):
         models.extend(_extract_pydantic_models(submodule))
 
     return models
@@ -143,6 +176,9 @@ def _clean_output_file(output_filename: str) -> None:
             end = i
             break
 
+    assert start is not None, "Could not find the start of the _Master_ interface."
+    assert end is not None, "Could not find the end of the _Master_ interface."
+
     banner_comment_lines = [
         "/* tslint:disable */\n",
         "/* eslint-disable */\n",
@@ -158,90 +194,114 @@ def _clean_output_file(output_filename: str) -> None:
         f.writelines(new_lines)
 
 
-def _clean_schema(schema: Dict[str, Any]) -> None:
+def _clean_json_schema(schema: Dict[str, Any], model: Any = None) -> None:
     """
     Clean up the resulting JSON schemas by:
 
-    1) Removing titles from JSON schema properties.
+    1) Get rid of the useless "An enumeration." description applied to Enums
+       which don't have a docstring.
+    2) Remove titles from JSON schema properties.
        If we don't do this, each property will have its own interface in the
        resulting typescript file (which is a LOT of unnecessary noise).
-    2) Getting rid of the useless "An enumeration." description applied to Enums
-       which don't have a docstring.
+    3) If it's a V1 model, ensure that nullability is properly represented.
+       https://github.com/pydantic/pydantic/issues/1270
     """
-    for prop in schema.get("properties", {}).values():
-        prop.pop("title", None)
-
     if "enum" in schema and schema.get("description") == "An enumeration.":
         del schema["description"]
 
-    # TODO: add check for if it is truly pydantic v1. If so, fix nullable fields. Do the thing to add "null" to union.
-    # https://github.com/pydantic/pydantic/issues/1270#issuecomment-729555558
+    properties: Dict[str, Dict[str, Any]] = schema.get("properties", {})
+
+    for prop in properties.values():
+        prop.pop("title", None)
+
+    if _is_pydantic_v1_model(model):
+        fields: List["ModelField"] = list(model.__fields__.values())
+        for field in fields:
+            try:
+                if not field.allow_none:
+                    continue
+                prop = properties.get(field.alias)
+                if prop is None:
+                    continue
+                prop_types: List[Any] = prop.setdefault("anyOf", [])
+                if any(t.get("type") == "null" for t in prop_types):
+                    continue
+                if "type" in prop:
+                    prop_types.append({"type": prop.pop("type")})
+                if "$ref" in prop:
+                    prop_types.append({"$ref": prop.pop("$ref")})
+                prop_types.append({"type": "null"})
+            except Exception:
+                LOG.error(
+                    f"Failed to ensure nullability for field {field.alias}.",
+                    exc_info=True,
+                )
 
 
-def _generate_json_schema(models: List[BaseModelType]) -> str:
+@contextmanager
+def _schema_generation_overrides(
+    model: Type[Any],
+) -> Generator[None, None, None]:
+    """
+    Temporarily override the 'extra' setting for a model,
+    changing it to 'forbid' unless it was EXPLICITLY set to 'allow'.
+    This prevents '[k: string]: any' from automatically being added to every interface.
+    """
+    revert: Dict[str, Any] = {}
+    config = _get_model_config(model)
+    try:
+        if isinstance(config, dict):
+            if config.get("extra") != "allow":
+                revert["extra"] = config.get("extra")
+                config["extra"] = "forbid"
+        else:
+            if config.extra != "allow":
+                revert["extra"] = config.extra
+                config.extra = "forbid"  # type: ignore
+        yield
+    finally:
+        for key, value in revert.items():
+            if isinstance(config, dict):
+                config[key] = value
+            else:
+                setattr(config, key, value)
+
+
+def _generate_json_schema(models: List[type]) -> str:
     """
     Create a top-level '_Master_' model with references to each of the actual models.
     Generate the schema for this model, which will include the schemas for all the
     nested models. Then clean up the schema.
     """
-    with _forbid_extras(models):
-        v1 = any(issubclass(m, BaseModelV1) for m in models)
+    with ExitStack() as stack:
+        models_by_name: Dict[str, type] = {}
+        models_as_fields: Dict[str, Tuple[type, Any]] = {}
 
-        master_model = (create_model_v1 if v1 else create_model_v2)(
-            "_Master_", **{m.__name__: (m, ...) for m in models}
-        )
+        for model in models:
+            stack.enter_context(_schema_generation_overrides(model))
+            name = model.__name__
+            models_by_name[name] = model
+            models_as_fields[name] = (model, ...)
 
-        if v1:
-            master_model.Config.extra = "forbid"
-            master_model.Config.schema_extra = staticmethod(_clean_schema)
-        else:
-            master_model.model_config["extra"] = "forbid"
-            master_model.model_config["json_schema_extra"] = staticmethod(_clean_schema)
+        use_v1_tools = any(issubclass(m, BaseModelV1) for m in models)
+        create_model = create_model_v1 if use_v1_tools else create_model_v2  # type: ignore
+        master_model = create_model("_Master_", **models_as_fields)  # type: ignore
+        master_schema = _get_model_json_schema(master_model)  # type: ignore
 
-        schema = (
-            json.loads(master_model.schema_json())
-            if v1
-            else master_model.model_json_schema(mode="serialization")
-        )
+        defs_key = "$defs" if "$defs" in master_schema else "definitions"
+        defs: Dict[str, Any] = master_schema.get(defs_key, {})
 
-        for d in schema.get("definitions" if v1 else "$defs", {}).values():
-            _clean_schema(d)
+        for name, schema in defs.items():
+            _clean_json_schema(schema, models_by_name.get(name))
 
-        return json.dumps(schema, indent=2)
-
-
-@contextmanager
-def _forbid_extras(models: List[BaseModelType]) -> None:
-    """
-    Temporarily override the 'extra' setting in models,
-    changing it to 'forbid' UNLESS it was explicitly set to 'allow'.
-
-    This prevents '[k: string]: any' from being added to every interface.
-    This change is reverted once the schema has been generated.
-    """
-    v1 = any(issubclass(m, BaseModelV1) for m in models)
-    extras = [
-        getattr(m.Config, "extra", None) if v1 else m.model_config.get("extra")
-        for m in models
-    ]
-    try:
-        for m in models:
-            if v1:
-                m.Config.extra = "forbid"
-            else:
-                m.model_config["extra"] = "forbid"
-        yield
-    finally:
-        for m, x in zip(models, extras):
-            if x is not None:
-                if v1:
-                    m.Config.extra = x
-                else:
-                    m.model_config["extra"] = x
+        return json.dumps(master_schema, indent=2)
 
 
 def generate_typescript_defs(
-    module: str, output: str, exclude: Tuple[str] = (), json2ts_cmd: str = "json2ts"
+    module: str,
+    output: str,
+    exclude: Tuple[str, ...] = (),
+    json2ts_cmd: str = "json2ts",
 ) -> None:
     """
     Convert the pydantic models in a python module into typescript interfaces.
@@ -258,22 +318,20 @@ def generate_typescript_defs(
             "https://www.npmjs.com/package/json-schema-to-typescript"
         )
 
-    logger.info("Finding pydantic models...")
+    LOG.info("Finding pydantic models...")
 
     models = _extract_pydantic_models(_import_module(module))
 
     if exclude:
         models = [
-            m
-            for m in models
-            if (m.__name__ not in exclude and m.__qualname__ not in exclude)
+            m for m in models if (m.__name__ not in exclude and m.__qualname__ not in exclude)
         ]
 
     if not models:
-        logger.info("No pydantic models found, exiting.")
+        LOG.info("No pydantic models found, exiting.")
         return
 
-    logger.info("Generating JSON schema from pydantic models...")
+    LOG.info("Generating JSON schema from pydantic models...")
 
     schema = _generate_json_schema(models)
     schema_dir = mkdtemp()
@@ -282,7 +340,7 @@ def generate_typescript_defs(
     with open(schema_file_path, "w") as f:
         f.write(schema)
 
-    logger.info("Converting JSON schema to typescript definitions...")
+    LOG.info("Converting JSON schema to typescript definitions...")
 
     json2ts_exit_code = os.system(
         f'{json2ts_cmd} -i {schema_file_path} -o {output} --bannerComment ""'
@@ -292,14 +350,12 @@ def generate_typescript_defs(
 
     if json2ts_exit_code == 0:
         _clean_output_file(output)
-        logger.info(f"Saved typescript definitions to {output}.")
+        LOG.info(f"Saved typescript definitions to {output}.")
     else:
-        raise RuntimeError(
-            f'"{json2ts_cmd}" failed with exit code {json2ts_exit_code}.'
-        )
+        raise RuntimeError(f'"{json2ts_cmd}" failed with exit code {json2ts_exit_code}.')
 
 
-def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
+def parse_cli_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     """
     Parses the command-line arguments passed to pydantic2ts.
     """
