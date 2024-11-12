@@ -89,36 +89,48 @@ def _is_submodule(obj: Any, module_name: str) -> bool:
 
 def _is_pydantic_v1_model(obj: Any) -> bool:
     """
-    Return true if an object is a pydantic V1 model.
+    Return true if the object is a 'concrete' pydantic V1 model.
     """
-    return inspect.isclass(obj) and (
-        (obj is not BaseModelV1 and issubclass(obj, BaseModelV1))
-        or (
-            GenericModelV1 is not None
-            and issubclass(obj, GenericModelV1)
-            and getattr(obj, "__concrete__", False)
-        )
-    )
+    if not inspect.isclass(obj):
+        return False
+    elif obj is BaseModelV1 or obj is GenericModelV1:
+        return False
+    elif GenericModelV1 and issubclass(obj, GenericModelV1):
+        return getattr(obj, "__concrete__", False)
+    return issubclass(obj, BaseModelV1)
 
 
 def _is_pydantic_v2_model(obj: Any) -> bool:
     """
-    Return true if an object is a pydantic V2 model.
+    Return true if an object is a 'concrete' pydantic V2 model.
     """
-    return inspect.isclass(obj) and (
-        BaseModelV2 is not None
-        and obj is not BaseModelV2
-        and issubclass(obj, BaseModelV2)
-        and not getattr(obj, "__pydantic_generic_metadata__", {}).get("parameters")
-    )
+    if not inspect.isclass(obj):
+        return False
+    elif obj is BaseModelV2 or BaseModelV2 is None:
+        return False
+    return issubclass(obj, BaseModelV2) and not getattr(
+        obj, "__pydantic_generic_metadata__", {}
+    ).get("parameters")
 
 
 def _is_pydantic_model(obj: Any) -> bool:
     """
-    Return true if an object is a concrete subclass of pydantic's BaseModel.
-    'concrete' meaning that it's not a generic model.
+    Return true if an object is a valid model for either V1 or V2 of pydantic.
     """
     return _is_pydantic_v1_model(obj) or _is_pydantic_v2_model(obj)
+
+
+def _has_null_variant(schema: Dict[str, Any]) -> bool:
+    """
+    Return true if a JSON schema has 'null' as one of its types.
+    """
+    if schema.get("type") == "null":
+        return True
+    if isinstance(schema.get("type"), list) and "null" in schema["type"]:
+        return True
+    if isinstance(schema.get("anyOf"), list):
+        return any(_has_null_variant(s) for s in schema["anyOf"])
+    return False
 
 
 def _get_model_config(model: Type[Any]) -> "Union[ConfigDict, Type[BaseConfig]]":
@@ -156,14 +168,54 @@ def _extract_pydantic_models(module: ModuleType) -> List[type]:
     return models
 
 
+def _clean_json_schema(schema: Dict[str, Any], model: Any = None) -> None:
+    """
+    Clean up the resulting JSON schemas via the following steps:
+
+    1) Get rid of the useless "An enumeration." description applied to Enums
+       which don't have a docstring.
+    2) Remove titles from JSON schema properties.
+       If we don't do this, each property will have its own interface in the
+       resulting typescript file (which is a LOT of unnecessary noise).
+    3) If it's a V1 model, ensure that nullability is properly represented.
+       https://github.com/pydantic/pydantic/issues/1270
+    """
+    if "enum" in schema and schema.get("description") == "An enumeration.":
+        del schema["description"]
+
+    properties: Dict[str, Dict[str, Any]] = schema.get("properties", {})
+
+    for prop in properties.values():
+        prop.pop("title", None)
+
+    if _is_pydantic_v1_model(model):
+        fields: List["ModelField"] = list(model.__fields__.values())
+        for field in fields:
+            try:
+                if not field.allow_none:
+                    continue
+                name = field.alias
+                prop = properties.get(name)
+                if prop is None:
+                    continue
+                if _has_null_variant(prop):
+                    continue
+                properties[name] = {"anyOf": [prop, {"type": "null"}]}
+            except Exception:
+                LOG.error(
+                    f"Failed to ensure nullability for field {field.alias}.",
+                    exc_info=True,
+                )
+
+
 def _clean_output_file(output_filename: str) -> None:
     """
-    Clean up the output file typescript definitions were written to by:
-    1. Removing the 'master model'.
-       This is a faux pydantic model with references to all the *actual* models necessary for generating
-       clean typescript definitions without any duplicates. We don't actually want it in the output, so
-       this function removes it from the generated typescript file.
-    2. Adding a banner comment with clear instructions for how to regenerate the typescript definitions.
+    Clean up the resulting typescript definitions via the following steps:
+
+    1. Remove the "_Master_" model.
+       It exists solely to serve as a namespace for the target models.
+       By rolling them all up into a single model, we can generate a single output file.
+    2. Add a banner comment with clear instructions for regenerating the typescript definitions.
     """
     with open(output_filename, "r") as f:
         lines = f.readlines()
@@ -194,50 +246,6 @@ def _clean_output_file(output_filename: str) -> None:
         f.writelines(new_lines)
 
 
-def _clean_json_schema(schema: Dict[str, Any], model: Any = None) -> None:
-    """
-    Clean up the resulting JSON schemas by:
-
-    1) Get rid of the useless "An enumeration." description applied to Enums
-       which don't have a docstring.
-    2) Remove titles from JSON schema properties.
-       If we don't do this, each property will have its own interface in the
-       resulting typescript file (which is a LOT of unnecessary noise).
-    3) If it's a V1 model, ensure that nullability is properly represented.
-       https://github.com/pydantic/pydantic/issues/1270
-    """
-    if "enum" in schema and schema.get("description") == "An enumeration.":
-        del schema["description"]
-
-    properties: Dict[str, Dict[str, Any]] = schema.get("properties", {})
-
-    for prop in properties.values():
-        prop.pop("title", None)
-
-    if _is_pydantic_v1_model(model):
-        fields: List["ModelField"] = list(model.__fields__.values())
-        for field in fields:
-            try:
-                if not field.allow_none:
-                    continue
-                prop = properties.get(field.alias)
-                if prop is None:
-                    continue
-                prop_types: List[Any] = prop.setdefault("anyOf", [])
-                if any(t.get("type") == "null" for t in prop_types):
-                    continue
-                if "type" in prop:
-                    prop_types.append({"type": prop.pop("type")})
-                if "$ref" in prop:
-                    prop_types.append({"$ref": prop.pop("$ref")})
-                prop_types.append({"type": "null"})
-            except Exception:
-                LOG.error(
-                    f"Failed to ensure nullability for field {field.alias}.",
-                    exc_info=True,
-                )
-
-
 @contextmanager
 def _schema_generation_overrides(
     model: Type[Any],
@@ -246,6 +254,8 @@ def _schema_generation_overrides(
     Temporarily override the 'extra' setting for a model,
     changing it to 'forbid' unless it was EXPLICITLY set to 'allow'.
     This prevents '[k: string]: any' from automatically being added to every interface.
+
+    TODO: check if overriding 'schema_extra' is necessary, or if there's a better way.
     """
     revert: Dict[str, Any] = {}
     config = _get_model_config(model)
@@ -254,10 +264,14 @@ def _schema_generation_overrides(
             if config.get("extra") != "allow":
                 revert["extra"] = config.get("extra")
                 config["extra"] = "forbid"
+            revert["json_schema_extra"] = config.get("json_schema_extra")
+            config["json_schema_extra"] = staticmethod(_clean_json_schema)
         else:
             if config.extra != "allow":
                 revert["extra"] = config.extra
                 config.extra = "forbid"  # type: ignore
+            revert["schema_extra"] = config.schema_extra
+            config.schema_extra = staticmethod(_clean_json_schema)  # type: ignore
         yield
     finally:
         for key, value in revert.items():

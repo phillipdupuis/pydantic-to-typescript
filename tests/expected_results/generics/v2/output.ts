@@ -19,12 +19,12 @@ export interface Error {
   message: string;
 }
 export interface ListArticlesResponse {
-  data: Article[] | null;
-  error: Error | null;
+  data?: Article[] | null;
+  error?: Error | null;
 }
 export interface ListUsersResponse {
-  data: User[] | null;
-  error: Error | null;
+  data?: User[] | null;
+  error?: Error | null;
 }
 export interface UserProfile {
   name: string;
@@ -34,6 +34,6 @@ export interface UserProfile {
   age: number;
 }
 export interface UserProfileResponse {
-  data: UserProfile | null;
-  error: Error | null;
+  data?: UserProfile | null;
+  error?: Error | null;
 }

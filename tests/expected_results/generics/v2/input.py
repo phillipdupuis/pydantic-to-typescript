@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Generic, List, Optional, Type, TypeVar, cast
+from typing import Generic, List, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -12,8 +12,8 @@ class Error(BaseModel):
 
 
 class ApiResponse(BaseModel, Generic[T]):
-    data: Optional[T]
-    error: Optional[Error]
+    data: Optional[T] = None
+    error: Optional[Error] = None
 
 
 def create_response_type(data_type: T, name: str) -> "Type[ApiResponse[T]]":
@@ -25,7 +25,7 @@ def create_response_type(data_type: T, name: str) -> "Type[ApiResponse[T]]":
     t = ApiResponse[data_type]
     t.__name__ = name
     t.__qualname__ = name
-    return cast(Type[ApiResponse[T]], t)
+    return t
 
 
 class User(BaseModel):
