@@ -14,7 +14,7 @@ try:
 
     assert BaseModel is not BaseModelV1
     _PYDANTIC_VERSIONS = ("v1", "v2")
-except (ImportError, AttributeError):
+except (ImportError, AssertionError):
     _PYDANTIC_VERSIONS = ("v1",)
 
 _RESULTS_DIRECTORY = Path(
