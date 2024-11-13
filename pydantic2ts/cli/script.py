@@ -23,24 +23,8 @@ from typing import (
 )
 from uuid import uuid4
 
-try:
-    from pydantic import BaseModel as BaseModelV2
-    from pydantic import create_model as create_model_v2
-    from pydantic.v1 import BaseModel as BaseModelV1
-    from pydantic.v1 import create_model as create_model_v1
-except ImportError:
-    BaseModelV2 = None
-    create_model_v2 = None
-    from pydantic import BaseModel as BaseModelV1
-    from pydantic import create_model as create_model_v1
-
-try:
-    from pydantic.v1.generics import GenericModel as GenericModelV1
-except ImportError:
-    try:
-        from pydantic.generics import GenericModel as GenericModelV1
-    except ImportError:
-        GenericModelV1 = None
+import pydantic2ts.pydantic_v1 as v1
+import pydantic2ts.pydantic_v2 as v2
 
 if TYPE_CHECKING:
     from pydantic.config import ConfigDict
@@ -63,12 +47,10 @@ def _import_module(path: str) -> ModuleType:
         if os.path.exists(path):
             name = uuid4().hex
             spec = spec_from_file_location(name, path, submodule_search_locations=[])
-            if spec is None:
-                raise ImportError(f"spec_from_file_location failed for {path}")
+            assert spec is not None, f"spec_from_file_location failed for {path}"
             module = module_from_spec(spec)
             sys.modules[name] = module
-            if spec.loader is None:
-                raise ImportError(f"loader is None for {path}")
+            assert spec.loader is not None, f"loader is None for {path}"
             spec.loader.exec_module(module)
             return module
         else:
@@ -87,40 +69,45 @@ def _is_submodule(obj: Any, module_name: str) -> bool:
     return inspect.ismodule(obj) and getattr(obj, "__name__", "").startswith(f"{module_name}.")
 
 
-def _is_pydantic_v1_model(obj: Any) -> bool:
+def _is_v1_model(obj: Any) -> bool:
     """
-    Return true if the object is a 'concrete' pydantic V1 model.
+    Return true if an object is a 'concrete' pydantic V1 model.
     """
     if not inspect.isclass(obj):
         return False
-    elif obj is BaseModelV1 or obj is GenericModelV1:
+    elif obj is v1.BaseModel:
         return False
-    elif GenericModelV1 and issubclass(obj, GenericModelV1):
-        return getattr(obj, "__concrete__", False)
-    return issubclass(obj, BaseModelV1)
+    elif v1.GenericModel and issubclass(obj, v1.GenericModel):
+        return bool(obj.__concrete__)
+    else:
+        return issubclass(obj, v1.BaseModel)
 
 
-def _is_pydantic_v2_model(obj: Any) -> bool:
+def _is_v2_model(obj: Any) -> bool:
     """
     Return true if an object is a 'concrete' pydantic V2 model.
     """
-    if not inspect.isclass(obj):
+    if not v2.enabled:
         return False
-    elif obj is BaseModelV2 or BaseModelV2 is None:
+    elif not inspect.isclass(obj):
         return False
-    return issubclass(obj, BaseModelV2) and not getattr(
-        obj, "__pydantic_generic_metadata__", {}
-    ).get("parameters")
+    elif obj is v2.BaseModel:
+        return False
+    elif not issubclass(obj, v2.BaseModel):
+        return False
+    generic_metadata = getattr(obj, "__pydantic_generic_metadata__", {})
+    generic_parameters = generic_metadata.get("parameters")
+    return not generic_parameters
 
 
 def _is_pydantic_model(obj: Any) -> bool:
     """
-    Return true if an object is a valid model for either V1 or V2 of pydantic.
+    Return true if an object is a concrete model for either V1 or V2 of pydantic.
     """
-    return _is_pydantic_v1_model(obj) or _is_pydantic_v2_model(obj)
+    return _is_v1_model(obj) or _is_v2_model(obj)
 
 
-def _has_null_variant(schema: Dict[str, Any]) -> bool:
+def _is_nullable(schema: Dict[str, Any]) -> bool:
     """
     Return true if a JSON schema has 'null' as one of its types.
     """
@@ -129,7 +116,7 @@ def _has_null_variant(schema: Dict[str, Any]) -> bool:
     if isinstance(schema.get("type"), list) and "null" in schema["type"]:
         return True
     if isinstance(schema.get("anyOf"), list):
-        return any(_has_null_variant(s) for s in schema["anyOf"])
+        return any(_is_nullable(s) for s in schema["anyOf"])
     return False
 
 
@@ -139,7 +126,7 @@ def _get_model_config(model: Type[Any]) -> "Union[ConfigDict, Type[BaseConfig]]"
     In version 1 of pydantic, this is a class. In version 2, it's a dictionary.
     """
     if hasattr(model, "Config") and inspect.isclass(model.Config):
-        return model.Config  # type: ignore
+        return model.Config
     return model.model_config
 
 
@@ -147,7 +134,7 @@ def _get_model_json_schema(model: Type[Any]) -> Dict[str, Any]:
     """
     Generate the JSON schema for a pydantic model.
     """
-    if _is_pydantic_v1_model(model):
+    if _is_v1_model(model):
         return json.loads(model.schema_json())
     return model.model_json_schema(mode="serialization")
 
@@ -188,7 +175,7 @@ def _clean_json_schema(schema: Dict[str, Any], model: Any = None) -> None:
     for prop in properties.values():
         prop.pop("title", None)
 
-    if _is_pydantic_v1_model(model):
+    if _is_v1_model(model):
         fields: List["ModelField"] = list(model.__fields__.values())
         for field in fields:
             try:
@@ -198,7 +185,7 @@ def _clean_json_schema(schema: Dict[str, Any], model: Any = None) -> None:
                 prop = properties.get(name)
                 if prop is None:
                     continue
-                if _has_null_variant(prop):
+                if _is_nullable(prop):
                     continue
                 properties[name] = {"anyOf": [prop, {"type": "null"}]}
             except Exception:
@@ -254,8 +241,6 @@ def _schema_generation_overrides(
     Temporarily override the 'extra' setting for a model,
     changing it to 'forbid' unless it was EXPLICITLY set to 'allow'.
     This prevents '[k: string]: any' from automatically being added to every interface.
-
-    TODO: check if overriding 'schema_extra' is necessary, or if there's a better way.
     """
     revert: Dict[str, Any] = {}
     config = _get_model_config(model)
@@ -264,14 +249,10 @@ def _schema_generation_overrides(
             if config.get("extra") != "allow":
                 revert["extra"] = config.get("extra")
                 config["extra"] = "forbid"
-            revert["json_schema_extra"] = config.get("json_schema_extra")
-            config["json_schema_extra"] = staticmethod(_clean_json_schema)
         else:
             if config.extra != "allow":
                 revert["extra"] = config.extra
                 config.extra = "forbid"  # type: ignore
-            revert["schema_extra"] = config.schema_extra
-            config.schema_extra = staticmethod(_clean_json_schema)  # type: ignore
         yield
     finally:
         for key, value in revert.items():
@@ -297,8 +278,8 @@ def _generate_json_schema(models: List[type]) -> str:
             models_by_name[name] = model
             models_as_fields[name] = (model, ...)
 
-        use_v1_tools = any(issubclass(m, BaseModelV1) for m in models)
-        create_model = create_model_v1 if use_v1_tools else create_model_v2  # type: ignore
+        use_v1_tools = any(issubclass(m, v1.BaseModel) for m in models)
+        create_model = v1.create_model if use_v1_tools else v2.create_model  # type: ignore
         master_model = create_model("_Master_", **models_as_fields)  # type: ignore
         master_schema = _get_model_json_schema(master_model)  # type: ignore
 
@@ -320,11 +301,14 @@ def generate_typescript_defs(
     """
     Convert the pydantic models in a python module into typescript interfaces.
 
-    :param module: python module containing pydantic model definitions, ex: my_project.api.schemas
+    :param module: python module containing pydantic model definitions.
+                   example: my_project.api.schemas
     :param output: file that the typescript definitions will be written to
-    :param exclude: optional, a tuple of names for pydantic models which should be omitted from the typescript output.
-    :param json2ts_cmd: optional, the command that will execute json2ts. Provide this if the executable is not
-                        discoverable or if it's locally installed (ex: 'yarn json2ts').
+    :param exclude: optional, a tuple of names for pydantic models which
+                    should be omitted from the typescript output.
+    :param json2ts_cmd: optional, the command that will execute json2ts.
+                        Provide this if the executable is not discoverable
+                        or if it's locally installed (ex: 'yarn json2ts').
     """
     if " " not in json2ts_cmd and not shutil.which(json2ts_cmd):
         raise Exception(
