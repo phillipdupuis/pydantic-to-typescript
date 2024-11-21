@@ -1,5 +1,5 @@
 try:
-    from pydantic.v1 import BaseModel, create_model
+    from pydantic.v1 import BaseModel, create_model  # type: ignore
     from pydantic.v1.generics import GenericModel
 
     enabled = True
@@ -10,7 +10,7 @@ except ImportError:
 
     try:
         from pydantic.generics import GenericModel
-    except ImportError:
+    except ImportError:  # pragma: no cover
         GenericModel = None
 
 __all__ = ("BaseModel", "GenericModel", "create_model", "enabled")

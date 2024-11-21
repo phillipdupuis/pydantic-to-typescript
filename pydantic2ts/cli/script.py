@@ -26,7 +26,7 @@ from uuid import uuid4
 import pydantic2ts.pydantic_v1 as v1
 import pydantic2ts.pydantic_v2 as v2
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from pydantic.config import ConfigDict
     from pydantic.v1.config import BaseConfig
     from pydantic.v1.fields import ModelField
