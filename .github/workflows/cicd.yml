@@ -49,23 +49,18 @@ jobs:
           python -m pip install -U .
       - name: Run tests against 'pydantic@latest'
         run: |
-          python -m pytest --cov=pydantic2ts --cov-append
-      - name: Run tests against 'pydantic==1.8.2'
+          pytest --cov=pydantic2ts
+      - name: (3.9 ubuntu) Run tests against 'pydantic==1.8.2'
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9' }}
         run: |
           python -m pip install 'pydantic==1.8.2'
           python -m pip install -U .
-          python -m pytest --cov=pydantic2ts --cov-append
-      - name: Combine coverage data
+          pytest --cov=pydantic2ts --cov-append
+      - name: (3.9 ubuntu) Generate LCOV File
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9' }}
         run: |
-          coverage combine
-          coverage report
-      - name: Generate LCOV File
-        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9' }}
-        run: |
-          coverage lcov -o coverage.lcov
-      - name: Coveralls
+          coverage lcov
+      - name: (3.9 ubuntu) Upload to Coveralls
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9' }}
         uses: coverallsapp/github-action@master
         with:
