@@ -10,24 +10,24 @@ from pydantic2ts import generate_typescript_defs
 from pydantic2ts.cli.script import parse_cli_args
 from pydantic2ts.pydantic_v2 import enabled as v2_enabled
 
-_PYDANTIC_VERSIONS = ("v1", "v2") if v2_enabled else ("v1",)
+_PYDANTIC_VERSIONS = (1, 2) if v2_enabled else (1,)
 _RESULTS_DIRECTORY = Path(
     os.path.join(os.path.dirname(os.path.realpath(__file__)), "expected_results")
 )
 
 
-def _get_input_module(test_name: str, pydantic_version: str) -> str:
-    return str(_RESULTS_DIRECTORY / test_name / pydantic_version / "input.py")
+def _get_input_module(test_name: str, pydantic_version: int) -> str:
+    return str(_RESULTS_DIRECTORY / test_name / f"v{pydantic_version}" / "input.py")
 
 
-def _get_expected_output(test_name: str, pydantic_version: str) -> str:
-    return (_RESULTS_DIRECTORY / test_name / pydantic_version / "output.ts").read_text()
+def _get_expected_output(test_name: str, pydantic_version: int) -> str:
+    return (_RESULTS_DIRECTORY / test_name / f"v{pydantic_version}" / "output.ts").read_text()
 
 
 def _run_test(
     tmp_path: Path,
     test_name: str,
-    pydantic_version: str,
+    pydantic_version: int,
     *,
     module_path: Optional[str] = None,
     call_from_python: bool = False,
@@ -38,7 +38,7 @@ def _run_test(
     Compare the output with the expected output, verifying it is identical.
     """
     module_path = module_path or _get_input_module(test_name, pydantic_version)
-    output_path = str(tmp_path / f"{test_name}_{pydantic_version}.ts")
+    output_path = str(tmp_path / f"{test_name}_v{pydantic_version}.ts")
 
     if call_from_python:
         generate_typescript_defs(module_path, output_path, exclude)
@@ -55,7 +55,7 @@ def _run_test(
     "pydantic_version, call_from_python",
     product(_PYDANTIC_VERSIONS, [False, True]),
 )
-def test_single_module(tmp_path: Path, pydantic_version: str, call_from_python: bool):
+def test_single_module(tmp_path: Path, pydantic_version: int, call_from_python: bool):
     _run_test(tmp_path, "single_module", pydantic_version, call_from_python=call_from_python)
 
 
@@ -63,7 +63,7 @@ def test_single_module(tmp_path: Path, pydantic_version: str, call_from_python: 
     "pydantic_version, call_from_python",
     product(_PYDANTIC_VERSIONS, [False, True]),
 )
-def test_submodules(tmp_path: Path, pydantic_version: str, call_from_python: bool):
+def test_submodules(tmp_path: Path, pydantic_version: int, call_from_python: bool):
     _run_test(tmp_path, "submodules", pydantic_version, call_from_python=call_from_python)
 
 
@@ -71,7 +71,7 @@ def test_submodules(tmp_path: Path, pydantic_version: str, call_from_python: boo
     "pydantic_version, call_from_python",
     product(_PYDANTIC_VERSIONS, [False, True]),
 )
-def test_generics(tmp_path: Path, pydantic_version: str, call_from_python: bool):
+def test_generics(tmp_path: Path, pydantic_version: int, call_from_python: bool):
     _run_test(tmp_path, "generics", pydantic_version, call_from_python=call_from_python)
 
 
@@ -79,7 +79,7 @@ def test_generics(tmp_path: Path, pydantic_version: str, call_from_python: bool)
     "pydantic_version, call_from_python",
     product(_PYDANTIC_VERSIONS, [False, True]),
 )
-def test_excluding_models(tmp_path: Path, pydantic_version: str, call_from_python: bool):
+def test_excluding_models(tmp_path: Path, pydantic_version: int, call_from_python: bool):
     _run_test(
         tmp_path,
         "excluding_models",
@@ -91,9 +91,9 @@ def test_excluding_models(tmp_path: Path, pydantic_version: str, call_from_pytho
 
 @pytest.mark.parametrize(
     "pydantic_version, call_from_python",
-    product([v for v in _PYDANTIC_VERSIONS if v != "v1"], [False, True]),
+    product([v for v in _PYDANTIC_VERSIONS if v > 1], [False, True]),
 )
-def test_computed_fields(tmp_path: Path, pydantic_version: str, call_from_python: bool):
+def test_computed_fields(tmp_path: Path, pydantic_version: int, call_from_python: bool):
     _run_test(tmp_path, "computed_fields", pydantic_version, call_from_python=call_from_python)
 
 
@@ -101,7 +101,7 @@ def test_computed_fields(tmp_path: Path, pydantic_version: str, call_from_python
     "pydantic_version, call_from_python",
     product(_PYDANTIC_VERSIONS, [False, True]),
 )
-def test_extra_fields(tmp_path: Path, pydantic_version: str, call_from_python: bool):
+def test_extra_fields(tmp_path: Path, pydantic_version: int, call_from_python: bool):
     _run_test(tmp_path, "extra_fields", pydantic_version, call_from_python=call_from_python)
 
 
@@ -109,7 +109,7 @@ def test_relative_filepath(tmp_path: Path):
     test_name = "single_module"
     pydantic_version = _PYDANTIC_VERSIONS[0]
     relative_path = (
-        Path(".") / "tests" / "expected_results" / test_name / pydantic_version / "input.py"
+        Path(".") / "tests" / "expected_results" / test_name / f"v{pydantic_version}" / "input.py"
     )
     _run_test(
         tmp_path,

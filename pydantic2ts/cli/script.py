@@ -177,17 +177,13 @@ def _clean_json_schema(schema: Dict[str, Any], model: Any = None) -> None:
 
     if _is_v1_model(model):
         fields: List["ModelField"] = list(model.__fields__.values())
-        for field in fields:
+        fields_that_should_be_nullable = [f for f in fields if f.allow_none]
+        for field in fields_that_should_be_nullable:
             try:
-                if not field.allow_none:
-                    continue
                 name = field.alias
-                prop = properties.get(name)
-                if prop is None:
-                    continue
-                if _is_nullable(prop):
-                    continue
-                properties[name] = {"anyOf": [prop, {"type": "null"}]}
+                prop = properties.get(field.alias)
+                if prop and not _is_nullable(prop):
+                    properties[name] = {"anyOf": [prop, {"type": "null"}]}
             except Exception:
                 LOG.error(
                     f"Failed to ensure nullability for field {field.alias}.",
