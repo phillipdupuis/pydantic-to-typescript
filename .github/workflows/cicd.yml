@@ -57,6 +57,7 @@ jobs:
           python -m pip install -U .
           python -m pytest --cov=pydantic2ts --cov-append
       - name: Combine coverage data
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9' }}
         run: |
           coverage combine
           coverage report
