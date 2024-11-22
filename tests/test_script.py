@@ -16,12 +16,12 @@ _RESULTS_DIRECTORY = Path(
 )
 
 
-def _get_input_module(test_name: str, pydantic_version: int) -> str:
-    return str(_RESULTS_DIRECTORY / test_name / f"v{pydantic_version}" / "input.py")
+def _python_module_path(test_name: str, pydantic_version: int) -> str:
+    return str(_RESULTS_DIRECTORY / test_name / f"v{pydantic_version}_input.py")
 
 
-def _get_expected_output(test_name: str, pydantic_version: int) -> str:
-    return (_RESULTS_DIRECTORY / test_name / f"v{pydantic_version}" / "output.ts").read_text()
+def _expected_typescript_code(test_name: str) -> str:
+    return (_RESULTS_DIRECTORY / test_name / "output.ts").read_text()
 
 
 def _run_test(
@@ -37,7 +37,7 @@ def _run_test(
     Execute pydantic2ts logic for converting pydantic models into tyepscript definitions.
     Compare the output with the expected output, verifying it is identical.
     """
-    module_path = module_path or _get_input_module(test_name, pydantic_version)
+    module_path = module_path or _python_module_path(test_name, pydantic_version)
     output_path = str(tmp_path / f"{test_name}_v{pydantic_version}.ts")
 
     if call_from_python:
@@ -48,7 +48,7 @@ def _run_test(
             cmd += f" --exclude {model_to_exclude}"
         subprocess.run(cmd, shell=True, check=True)
 
-    assert Path(output_path).read_text() == _get_expected_output(test_name, pydantic_version)
+    assert Path(output_path).read_text() == _expected_typescript_code(test_name)
 
 
 @pytest.mark.parametrize(
@@ -108,9 +108,8 @@ def test_extra_fields(tmp_path: Path, pydantic_version: int, call_from_python: b
 def test_relative_filepath(tmp_path: Path):
     test_name = "single_module"
     pydantic_version = _PYDANTIC_VERSIONS[0]
-    relative_path = (
-        Path(".") / "tests" / "expected_results" / test_name / f"v{pydantic_version}" / "input.py"
-    )
+    absolute_path = _python_module_path(test_name, pydantic_version)
+    relative_path = Path(absolute_path).relative_to(Path.cwd())
     _run_test(
         tmp_path,
         test_name,
@@ -120,7 +119,7 @@ def test_relative_filepath(tmp_path: Path):
 
 
 def test_error_if_json2ts_not_installed(tmp_path: Path):
-    module_path = _get_input_module("single_module", _PYDANTIC_VERSIONS[0])
+    module_path = _python_module_path("single_module", _PYDANTIC_VERSIONS[0])
     output_path = str(tmp_path / "json2ts_test_output.ts")
 
     # If the json2ts command has no spaces and the executable cannot be found,

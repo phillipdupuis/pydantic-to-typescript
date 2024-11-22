@@ -5,8 +5,8 @@ try:
 except ImportError:
     from pydantic import BaseModel
 
-from .animals.cats import Cat
-from .animals.dogs import Dog
+from .v1_animals.cats import Cat
+from .v1_animals.dogs import Dog
 
 
 class AnimalShelter(BaseModel):

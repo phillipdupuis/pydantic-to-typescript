@@ -2,8 +2,8 @@ from typing import List
 
 from pydantic import BaseModel
 
-from .animals.cats import Cat
-from .animals.dogs import Dog
+from .v2_animals.cats import Cat
+from .v2_animals.dogs import Dog
 
 
 class AnimalShelter(BaseModel):
