@@ -5,8 +5,16 @@
 /* Do not modify it by hand - just update the pydantic models and then re-run the script
 */
 
-export interface Profile {
-  username: string;
-  age?: number | null;
-  hobbies: string[];
+export interface ModelExtraAllow {
+  a: string;
+  [k: string]: unknown;
+}
+export interface ModelExtraForbid {
+  a: string;
+}
+export interface ModelExtraIgnore {
+  a: string;
+}
+export interface ModelExtraNone {
+  a: string;
 }

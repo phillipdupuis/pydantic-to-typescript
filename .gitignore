@@ -107,6 +107,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv-v1
 env/
 venv/
 ENV/
@@ -143,3 +144,7 @@ cython_debug/
 
 # VS Code config
 .vscode
+
+# test outputs
+output_debug.ts
+schema_debug.json

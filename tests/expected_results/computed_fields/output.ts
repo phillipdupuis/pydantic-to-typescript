@@ -5,8 +5,8 @@
 /* Do not modify it by hand - just update the pydantic models and then re-run the script
 */
 
-export interface Profile {
-  username: string;
-  age?: number | null;
-  hobbies: string[];
+export interface Rectangle {
+  width: number;
+  length: number;
+  area: number;
 }

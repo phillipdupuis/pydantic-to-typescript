@@ -4,11 +4,13 @@ on:
   pull_request:
 jobs:
   lint:
-    name: Lint code with black
+    name: Lint code with ruff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: psf/black@stable
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v1
+        with:
+          src: ./pydantic2ts
   test:
     name: Run unit tests
     needs: lint
@@ -16,66 +18,84 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
-        python-version: ["3.8"]
+        python-version: ["3.9"]
         include:
           - os: ubuntu-latest
-            python-version: "3.6"
-          - os: ubuntu-latest
-            python-version: "3.7"
-          - os: ubuntu-latest
-            python-version: "3.9"
+            python-version: "3.8"
           - os: ubuntu-latest
             python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
-      - name: Set up Node.js 16
-        uses: actions/setup-node@v3
+        uses: actions/checkout@v4
+      - name: Install node
+        uses: actions/setup-node@v4
         with:
-          node-version: 16
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
+          node-version: 20
       - name: Install json-schema-to-typescript
+        run: npm i -g json-schema-to-typescript
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.2"
+      - name: Run tests against 'pydantic@latest'
         run: |
-          npm i -g json-schema-to-typescript
-      - name: Install python dependencies
+          uv python install ${{ matrix.python-version }}
+          uv sync --all-extras --dev
+          uv run pytest --cov=pydantic2ts
+      - name: (ubuntu 3.9) Run tests against 'pydantic==1.8.2' and generate an LCOV file for Coveralls
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9' }}
         run: |
-          python -m pip install -U pip wheel pytest pytest-cov coverage
-          python -m pip install -U .
-      - name: Run tests
-        run: |
-          python -m pytest --cov=pydantic2ts
-      - name: Generate LCOV File
-        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.8' }}
-        run: |
-          coverage lcov
-      - name: Coveralls
-        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.8' }}
-        uses: coverallsapp/github-action@master
+          uv add 'pydantic==1.8.2'
+          uv run pytest --cov=pydantic2ts --cov-append
+          uv run coverage lcov
+      - name: (ubuntu 3.9) Upload to Coveralls
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9' }}
+        uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path-to-lcov: coverage.lcov
-  deploy:
-    name: Deploy to PyPi
-    runs-on: ubuntu-latest
+  build:
+    name: Build pydantic2ts for distribution
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
     needs: test
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python 3.8
-        uses: actions/setup-python@v4
+      - name: Check out repo
+        uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
         with:
-          python-version: 3.8
-      - name: Install dependencies
-        run: |
-          python -m pip install -U pip wheel
-      - name: Build dist
-        run: |
-          python setup.py sdist bdist_wheel bdist_egg
-      - name: Publish package
-        uses: pypa/gh-action-pypi-publish@v1.5.0
+          version: "0.5.2"
+      - name: Install python 3.9
+        run: uv python install 3.9
+      - name: Build pydantic2ts
+        run: uv build
+      - name: Store the distribution
+        uses: actions/upload-artifact@v4
         with:
-          user: __token__
-          password: ${{ secrets.pypi_password }}
+          name: pydantic2ts-dist
+          path: dist/
+  publish-to-pypi:
+    name: Publish pydantic2ts to PyPI
+    if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pydantic-to-typescript
+    permissions:
+      id-token: write
+    steps:
+      - name: Download all the dists
+        uses: actions/download-artifact@v4
+        with:
+          name: pydantic2ts-dist
+          path: dist/
+      - name: Publish distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

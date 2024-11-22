@@ -1,36 +1,44 @@
 import os
 import subprocess
-import sys
+from itertools import product
+from pathlib import Path
+from typing import Optional, Tuple
 
 import pytest
 
 from pydantic2ts import generate_typescript_defs
 from pydantic2ts.cli.script import parse_cli_args
+from pydantic2ts.pydantic_v2 import enabled as v2_enabled
+
+_PYDANTIC_VERSIONS = (1, 2) if v2_enabled else (1,)
+_RESULTS_DIRECTORY = Path(
+    os.path.join(os.path.dirname(os.path.realpath(__file__)), "expected_results")
+)
 
 
-def _results_directory() -> str:
-    return os.path.join(os.path.dirname(os.path.realpath(__file__)), "expected_results")
+def _python_module_path(test_name: str, pydantic_version: int) -> str:
+    return str(_RESULTS_DIRECTORY / test_name / f"v{pydantic_version}_input.py")
 
 
-def get_input_module(test_name: str) -> str:
-    return os.path.join(_results_directory(), test_name, "input.py")
+def _expected_typescript_code(test_name: str) -> str:
+    return (_RESULTS_DIRECTORY / test_name / "output.ts").read_text()
 
 
-def get_expected_output(test_name: str) -> str:
-    path = os.path.join(_results_directory(), test_name, "output.ts")
-    with open(path, "r") as f:
-        return f.read()
-
-
-def run_test(
-    tmpdir, test_name, *, module_path=None, call_from_python=False, exclude=()
+def _run_test(
+    tmp_path: Path,
+    test_name: str,
+    pydantic_version: int,
+    *,
+    module_path: Optional[str] = None,
+    call_from_python: bool = False,
+    exclude: Tuple[str, ...] = (),
 ):
     """
     Execute pydantic2ts logic for converting pydantic models into tyepscript definitions.
     Compare the output with the expected output, verifying it is identical.
     """
-    module_path = module_path or get_input_module(test_name)
-    output_path = tmpdir.join(f"cli_{test_name}.ts").strpath
+    module_path = module_path or _python_module_path(test_name, pydantic_version)
+    output_path = str(tmp_path / f"{test_name}_v{pydantic_version}.ts")
 
     if call_from_python:
         generate_typescript_defs(module_path, output_path, exclude)
@@ -38,71 +46,81 @@ def run_test(
         cmd = f"pydantic2ts --module {module_path} --output {output_path}"
         for model_to_exclude in exclude:
             cmd += f" --exclude {model_to_exclude}"
-        subprocess.run(cmd, shell=True)
+        subprocess.run(cmd, shell=True, check=True)
 
-    with open(output_path, "r") as f:
-        output = f.read()
-    assert output == get_expected_output(test_name)
+    assert Path(output_path).read_text() == _expected_typescript_code(test_name)
 
 
-def test_single_module(tmpdir):
-    run_test(tmpdir, "single_module")
-
-
-@pytest.mark.skipif(
-    sys.version_info < (3, 8),
-    reason="Literal requires python 3.8 or higher (Ref.: PEP 586)",
+@pytest.mark.parametrize(
+    "pydantic_version, call_from_python",
+    product(_PYDANTIC_VERSIONS, [False, True]),
 )
-def test_submodules(tmpdir):
-    run_test(tmpdir, "submodules")
+def test_single_module(tmp_path: Path, pydantic_version: int, call_from_python: bool):
+    _run_test(tmp_path, "single_module", pydantic_version, call_from_python=call_from_python)
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 7),
-    reason=(
-        "GenericModel is only supported for python>=3.7 "
-        "(Ref.: https://pydantic-docs.helpmanual.io/usage/models/#generic-models)"
-    ),
+@pytest.mark.parametrize(
+    "pydantic_version, call_from_python",
+    product(_PYDANTIC_VERSIONS, [False, True]),
 )
-def test_generics(tmpdir):
-    run_test(tmpdir, "generics")
+def test_submodules(tmp_path: Path, pydantic_version: int, call_from_python: bool):
+    _run_test(tmp_path, "submodules", pydantic_version, call_from_python=call_from_python)
 
 
-def test_excluding_models(tmpdir):
-    run_test(
-        tmpdir, "excluding_models", exclude=("LoginCredentials", "LoginResponseData")
-    )
+@pytest.mark.parametrize(
+    "pydantic_version, call_from_python",
+    product(_PYDANTIC_VERSIONS, [False, True]),
+)
+def test_generics(tmp_path: Path, pydantic_version: int, call_from_python: bool):
+    _run_test(tmp_path, "generics", pydantic_version, call_from_python=call_from_python)
 
 
-def test_relative_filepath(tmpdir):
-    test_name = "single_module"
-    relative_path = os.path.join(
-        ".", "tests", "expected_results", test_name, "input.py"
-    )
-    run_test(
-        tmpdir,
-        "single_module",
-        module_path=relative_path,
-    )
-
-
-def test_calling_from_python(tmpdir):
-    run_test(tmpdir, "single_module", call_from_python=True)
-    if sys.version_info >= (3, 8):
-        run_test(tmpdir, "submodules", call_from_python=True)
-    if sys.version_info >= (3, 7):
-        run_test(tmpdir, "generics", call_from_python=True)
-    run_test(
-        tmpdir,
+@pytest.mark.parametrize(
+    "pydantic_version, call_from_python",
+    product(_PYDANTIC_VERSIONS, [False, True]),
+)
+def test_excluding_models(tmp_path: Path, pydantic_version: int, call_from_python: bool):
+    _run_test(
+        tmp_path,
         "excluding_models",
-        call_from_python=True,
+        pydantic_version,
+        call_from_python=call_from_python,
         exclude=("LoginCredentials", "LoginResponseData"),
     )
 
 
-def test_error_if_json2ts_not_installed(tmpdir):
-    module_path = get_input_module("single_module")
-    output_path = tmpdir.join(f"cli_single_module.ts").strpath
+@pytest.mark.parametrize(
+    "pydantic_version, call_from_python",
+    product([v for v in _PYDANTIC_VERSIONS if v > 1], [False, True]),
+)
+def test_computed_fields(tmp_path: Path, pydantic_version: int, call_from_python: bool):
+    _run_test(tmp_path, "computed_fields", pydantic_version, call_from_python=call_from_python)
+
+
+@pytest.mark.parametrize(
+    "pydantic_version, call_from_python",
+    product(_PYDANTIC_VERSIONS, [False, True]),
+)
+def test_extra_fields(tmp_path: Path, pydantic_version: int, call_from_python: bool):
+    _run_test(tmp_path, "extra_fields", pydantic_version, call_from_python=call_from_python)
+
+
+def test_relative_filepath(tmp_path: Path):
+    test_name = "single_module"
+    pydantic_version = _PYDANTIC_VERSIONS[0]
+    absolute_path = _python_module_path(test_name, pydantic_version)
+    relative_path = Path(absolute_path).relative_to(Path.cwd())
+    _run_test(
+        tmp_path,
+        test_name,
+        pydantic_version,
+        module_path=str(relative_path),
+    )
+
+
+def test_error_if_json2ts_not_installed(tmp_path: Path):
+    module_path = _python_module_path("single_module", _PYDANTIC_VERSIONS[0])
+    output_path = str(tmp_path / "json2ts_test_output.ts")
 
     # If the json2ts command has no spaces and the executable cannot be found,
     # that means the user either hasn't installed json-schema-to-typescript or they made a typo.
@@ -132,11 +150,9 @@ def test_error_if_json2ts_not_installed(tmpdir):
     assert str(exc2.value).startswith(f'"{invalid_local_cmd}" failed with exit code ')
 
 
-def test_error_if_invalid_module_path(tmpdir):
+def test_error_if_invalid_module_path(tmp_path: Path):
     with pytest.raises(ModuleNotFoundError):
-        generate_typescript_defs(
-            "fake_module", tmpdir.join(f"fake_module_output.ts").strpath
-        )
+        generate_typescript_defs("fake_module", str(tmp_path / "fake_module_output.ts"))
 
 
 def test_parse_cli_args():

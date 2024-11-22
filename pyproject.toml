@@ -1,0 +1,61 @@
+[project]
+name = "pydantic-to-typescript"
+version = "2.0.0"
+description = "Convert pydantic models to typescript interfaces"
+authors = [
+    {name = "Phillip Dupuis", email = "phillip_dupuis@alumni.brown.edu"},
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ["pydantic", "typescript", "annotations", "validation", "interface"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "pydantic",
+]
+
+[project.urls]
+Homepage = "https://github.com/phillipdupuis/pydantic-to-typescript"
+Repository = "https://github.com/phillipdupuis/pydantic-to-typescript"
+
+[project.scripts]
+pydantic2ts = "pydantic2ts.cli.script:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "coverage",
+    "ruff",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pydantic2ts"]
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "W"]
+fixable = ["ALL"]
+ignore = ["E501"]
