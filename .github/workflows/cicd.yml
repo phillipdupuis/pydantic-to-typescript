@@ -13,6 +13,7 @@ jobs:
           src: ./pydantic2ts
   test:
     name: Run unit tests
+    needs: lint
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -55,17 +56,18 @@ jobs:
           uv run coverage lcov
       - name: (ubuntu 3.9) Upload to Coveralls
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9' }}
-        uses: coverallsapp/github-action@master
+        uses: coverallsapp/github-action@2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path-to-lcov: coverage.lcov
   deploy:
     name: Deploy to PyPi
+    needs: test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
-    needs: test
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repo
+        uses: actions/checkout@v4
       - name: Set up Python 3.9
         uses: actions/setup-python@v5
         with:
