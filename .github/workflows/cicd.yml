@@ -32,34 +32,31 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
-      - name: Set up Node.js 20
+      - name: Install node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
       - name: Install json-schema-to-typescript
         run: |
           npm i -g json-schema-to-typescript
-      - name: Install python dependencies
-        run: |
-          python -m pip install -U pip wheel pytest pytest-cov coverage
-          python -m pip install -U .
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.2"
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      - name: Install the project
+        run: uv sync --all-extras --dev
       - name: Run tests against 'pydantic@latest'
-        run: |
-          pytest --cov=pydantic2ts
+        run: uv run pytest --cov=pydantic2ts
       - name: (3.9 ubuntu) Run tests against 'pydantic==1.8.2'
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9' }}
         run: |
-          python -m pip install 'pydantic==1.8.2'
-          python -m pip install -U .
-          pytest --cov=pydantic2ts --cov-append
+          uv pip install 'pydantic==1.8.2'
+          uv run pytest --cov=pydantic2ts --cov-append
       - name: (3.9 ubuntu) Generate LCOV File
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9' }}
-        run: |
-          coverage lcov
+        run: uv run coverage lcov
       - name: (3.9 ubuntu) Upload to Coveralls
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9' }}
         uses: coverallsapp/github-action@master
