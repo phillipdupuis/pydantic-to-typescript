@@ -362,10 +362,12 @@ def parse_cli_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         "--module",
         help="name or filepath of the python module.\n"
         "Discoverable submodules will also be checked.",
+        required=True,
     )
     parser.add_argument(
         "--output",
         help="name of the file the typescript definitions should be written to.",
+        required=True,
     )
     parser.add_argument(
         "--exclude",
