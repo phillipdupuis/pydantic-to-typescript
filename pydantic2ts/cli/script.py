@@ -34,6 +34,9 @@ if TYPE_CHECKING:  # pragma: no cover
 
 LOG = logging.getLogger("pydantic2ts")
 
+_USELESS_ENUM_DESCRIPTION = "An enumeration."
+_USELESS_STR_DESCRIPTION = inspect.getdoc(str)
+
 
 def _import_module(path: str) -> ModuleType:
     """
@@ -159,15 +162,20 @@ def _clean_json_schema(schema: Dict[str, Any], model: Any = None) -> None:
     """
     Clean up the resulting JSON schemas via the following steps:
 
-    1) Get rid of the useless "An enumeration." description applied to Enums
-       which don't have a docstring.
+    1) Get rid of descriptions that are auto-generated and just add noise:
+        - "An enumeration." for Enums
+        - `inspect.getdoc(str)` for Literal types
     2) Remove titles from JSON schema properties.
        If we don't do this, each property will have its own interface in the
        resulting typescript file (which is a LOT of unnecessary noise).
     3) If it's a V1 model, ensure that nullability is properly represented.
        https://github.com/pydantic/pydantic/issues/1270
     """
-    if "enum" in schema and schema.get("description") == "An enumeration.":
+    description = schema.get("description")
+
+    if "enum" in schema and description == _USELESS_ENUM_DESCRIPTION:
+        del schema["description"]
+    elif description == _USELESS_STR_DESCRIPTION:
         del schema["description"]
 
     properties: Dict[str, Dict[str, Any]] = schema.get("properties", {})
